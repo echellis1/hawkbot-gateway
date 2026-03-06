@@ -27,6 +27,20 @@ impl SportKind {
             _ => Self::Basketball,
         }
     }
+
+    fn rtd_profile_name(self) -> &'static str {
+        match self {
+            Self::Basketball => "rtd_basketball",
+            Self::Volleyball => "rtd_volleyball",
+            Self::Football => "rtd_football",
+            Self::Soccer => "rtd_soccer",
+            Self::Lacrosse => "rtd_lacrosse",
+        }
+    }
+}
+
+pub(crate) fn rtd_profile_for_sport_name(name: &str) -> &'static str {
+    SportKind::from_sport_name(name).rtd_profile_name()
 }
 
 pub async fn run_decoder(
@@ -46,6 +60,7 @@ pub async fn run_decoder(
                     device = %cfg.serial_device,
                     baud = cfg.baud,
                     sport = ?selected_sport,
+                    rtd_profile = selected_sport.rtd_profile_name(),
                     "serial connected"
                 );
 
@@ -82,8 +97,10 @@ pub async fn run_decoder(
     }
 }
 
-fn synthesize_payload(cfg: &AppConfig, bytes: &[u8]) -> NormalizedScoreboardStatus {
-    let sum = bytes.iter().fold(0u16, |acc, b| acc.wrapping_add(*b as u16));
+pub(crate) fn synthesize_payload(cfg: &AppConfig, bytes: &[u8]) -> NormalizedScoreboardStatus {
+    let sum = bytes
+        .iter()
+        .fold(0u16, |acc, b| acc.wrapping_add(*b as u16));
     NormalizedScoreboardStatus {
         schema_version: 1,
         timestamp_rfc3339: Utc::now().to_rfc3339(),
@@ -102,6 +119,24 @@ fn synthesize_payload(cfg: &AppConfig, bytes: &[u8]) -> NormalizedScoreboardStat
         extras: json!({
             "decoder_note": "placeholder mapping from RTD bytes",
             "sample_bytes": bytes.len(),
+            "rtd_profile": rtd_profile_for_sport_name(&cfg.sport_type),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::synthesize_payload;
+    use crate::config::AppConfig;
+
+    #[test]
+    fn payload_uses_sport_specific_rtd_profile() {
+        let mut cfg = AppConfig::default();
+        cfg.sport_type = "soccer".to_string();
+
+        let payload = synthesize_payload(&cfg, &[1, 2, 3]);
+
+        assert_eq!(payload.sport_type, "soccer");
+        assert_eq!(payload.extras["rtd_profile"], "rtd_soccer");
     }
 }

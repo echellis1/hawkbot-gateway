@@ -17,8 +17,7 @@ use tracing::{error, info};
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -56,7 +55,7 @@ async fn main() -> Result<()> {
 
     mqtt.publish_config(&config).await;
 
-    let app = build_router(shared_config, config_tx, status_rx, mqtt);
+    let app = build_router(shared_config, config_tx, status_tx, status_rx, mqtt);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     info!("HTTP listening on 0.0.0.0:8080");
 
@@ -77,12 +76,14 @@ async fn main() -> Result<()> {
 fn build_router(
     shared_config: SharedConfig,
     config_tx: watch::Sender<AppConfig>,
+    status_tx: watch::Sender<NormalizedScoreboardStatus>,
     status_rx: watch::Receiver<NormalizedScoreboardStatus>,
     mqtt: MqttPublisher,
 ) -> Router {
     web::router(web::WebState {
         config: shared_config,
         config_tx,
+        status_tx,
         status_rx,
         mqtt,
     })
@@ -120,7 +121,8 @@ async fn publish_health_loop(
     let mut mqtt_connected_rx = mqtt_connected_rx;
 
     loop {
-        let health = HealthStatus::running(*serial_connected_rx.borrow(), *mqtt_connected_rx.borrow());
+        let health =
+            HealthStatus::running(*serial_connected_rx.borrow(), *mqtt_connected_rx.borrow());
         if let Err(err) = mqtt.publish_json(HEALTH_TOPIC, &health, true).await {
             error!(error = ?err, "failed to publish health");
         }
