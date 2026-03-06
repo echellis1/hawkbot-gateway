@@ -1,4 +1,5 @@
 use crate::config::{save_config, AppConfig, SharedConfig, CONFIG_PATH};
+use crate::decoder::rtd_profile_for_sport_name;
 use crate::mqtt::MqttPublisher;
 use crate::schema::NormalizedScoreboardStatus;
 use axum::extract::{Form, State};
@@ -15,6 +16,7 @@ use tokio::sync::watch;
 pub struct WebState {
     pub config: SharedConfig,
     pub config_tx: watch::Sender<AppConfig>,
+    pub status_tx: watch::Sender<NormalizedScoreboardStatus>,
     pub status_rx: watch::Receiver<NormalizedScoreboardStatus>,
     pub mqtt: MqttPublisher,
 }
@@ -103,7 +105,21 @@ async fn post_admin(
     }
 
     let _ = state.config_tx.send(cfg.clone());
-    state.mqtt.publish_config(&cfg).await;
+
+    let mut current_status = state.status_rx.borrow().clone();
+    current_status.controller_type = cfg.controller_type.clone();
+    current_status.sport_type = cfg.sport_type.clone();
+    current_status.timestamp_rfc3339 = chrono::Utc::now().to_rfc3339();
+    current_status.extras = serde_json::json!({
+        "rtd_profile": rtd_profile_for_sport_name(&cfg.sport_type),
+    });
+    let _ = state.status_tx.send(current_status);
+
+    let mqtt = state.mqtt.clone();
+    let cfg_for_publish = cfg.clone();
+    tokio::spawn(async move {
+        mqtt.publish_config(&cfg_for_publish).await;
+    });
 
     Html(render_admin_page(&cfg)).into_response()
 }

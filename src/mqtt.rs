@@ -37,7 +37,12 @@ impl MqttPublisher {
         )
     }
 
-    pub async fn publish_json<T: Serialize>(&self, topic: &str, payload: &T, retain: bool) -> Result<()> {
+    pub async fn publish_json<T: Serialize>(
+        &self,
+        topic: &str,
+        payload: &T,
+        retain: bool,
+    ) -> Result<()> {
         let bytes = serde_json::to_vec(payload)?;
         self.client
             .publish(topic, QoS::AtLeastOnce, retain, bytes)
