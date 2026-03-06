@@ -15,7 +15,45 @@ Rust service that reads Daktronics All Sport 5000 RTD bytes from serial, normali
 - Live config updates restart the decoder loop
 - Serial reconnect every 2 seconds on disconnect
 
-## Run
+## Raspberry Pi dependencies
+
+### Hardware
+
+- Raspberry Pi 4 or 5
+- Daktronics controller serial feed into a USB-RS232 adapter
+
+### OS packages
+
+Install these packages on Raspberry Pi OS (Debian-based):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential pkg-config libssl-dev ca-certificates curl git mosquitto
+```
+
+### Rust
+
+Install Rust with rustup:
+
+```bash
+curl https://sh.rustup.rs -sSf | sh -s -- -y
+source "$HOME/.cargo/env"
+rustup toolchain install stable
+rustup default stable
+```
+
+### One-shot bootstrap script
+
+A helper script is included:
+
+```bash
+PROJECT_DIR=/opt/hawkbot-gateway ./scripts/pi-bootstrap.sh
+```
+
+The script installs OS dependencies, installs Rust if missing, builds release, installs files into `/opt/hawkbot-gateway`, and enables both `mosquitto` and the gateway service.
+
+## Run (manual)
 
 ```bash
 cargo run
