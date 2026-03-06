@@ -1,0 +1,14 @@
+[Unit]
+Description=Daktronics RTD MQTT/JSON Gateway
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hawkbot-gateway
+ExecStart=/opt/hawkbot-gateway/target/release/hawkbot-gateway
+Restart=always
+RestartSec=2
+User=pi
+
+[Install]
+WantedBy=multi-user.target
