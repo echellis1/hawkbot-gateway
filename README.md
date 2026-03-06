@@ -59,6 +59,22 @@ The script installs OS dependencies, installs Rust if missing, builds release, i
 cargo run
 ```
 
+If `cargo run` returns `-bash: cargo: command not found`, your Rust bin path is not in the current shell yet. Run:
+
+```bash
+source "$HOME/.cargo/env"
+cargo --version
+```
+
+If that still fails, install Rust first:
+
+```bash
+curl https://sh.rustup.rs -sSf | sh -s -- -y
+source "$HOME/.cargo/env"
+rustup toolchain install stable
+rustup default stable
+```
+
 Server listens on `0.0.0.0:8080`.
 
 ## Configuration
