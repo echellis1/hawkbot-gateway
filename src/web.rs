@@ -12,6 +12,8 @@ use base64::Engine;
 use serde::Deserialize;
 use tokio::sync::watch;
 
+const SUPPORTED_SPORTS: [&str; 5] = ["basketball", "volleyball", "football", "soccer", "lacrosse"];
+
 #[derive(Clone)]
 pub struct WebState {
     pub config: SharedConfig,
@@ -28,6 +30,7 @@ pub fn router(state: WebState) -> Router {
         .route("/%22/status.json/%22", get(get_status_json))
         .route("/\"/status.json/\"", get(get_status_json))
         .route("/admin", get(get_admin).post(post_admin))
+        .route("/admin/simulate", axum::routing::post(post_admin_simulate))
         .route("/%22/admin/%22", get(get_admin).post(post_admin))
         .route("/\"/admin/\"", get(get_admin).post(post_admin))
         .with_state(state)
@@ -71,6 +74,11 @@ pub struct AdminForm {
     mqtt_port: u16,
     mqtt_topic: String,
     publish_interval_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SimulateForm {
+    sport_type: String,
 }
 
 async fn post_admin(
@@ -124,6 +132,35 @@ async fn post_admin(
     Html(render_admin_page(&cfg)).into_response()
 }
 
+async fn post_admin_simulate(
+    State(state): State<WebState>,
+    headers: HeaderMap,
+    Form(form): Form<SimulateForm>,
+) -> Response {
+    if !authorized(&state, &headers).await {
+        return unauthorized();
+    }
+
+    let cfg = state.config.read().await.clone();
+    let sport = if SUPPORTED_SPORTS.contains(&form.sport_type.as_str()) {
+        form.sport_type.as_str()
+    } else {
+        cfg.sport_type.as_str()
+    };
+
+    let payload = simulated_status_for_sport(&cfg.controller_type, sport);
+    let _ = state.status_tx.send(payload.clone());
+
+    let mqtt = state.mqtt.clone();
+    let topic = cfg.mqtt_topic.clone();
+    let retain = cfg.mqtt_retain;
+    tokio::spawn(async move {
+        let _ = mqtt.publish_json(&topic, &payload, retain).await;
+    });
+
+    Html(render_admin_page(&cfg)).into_response()
+}
+
 async fn authorized(state: &WebState, headers: &HeaderMap) -> bool {
     let Some(value) = headers.get(header::AUTHORIZATION) else {
         return false;
@@ -157,11 +194,15 @@ fn unauthorized() -> Response {
 fn render_admin_page(cfg: &AppConfig) -> String {
     let controller_type_select =
         render_select("controller_type", &cfg.controller_type, &["all_sport_5000"]);
-    let sport_type_select = render_select(
-        "sport_type",
-        &cfg.sport_type,
-        &["basketball", "volleyball", "football", "soccer", "lacrosse"],
-    );
+    let sport_type_select = render_select("sport_type", &cfg.sport_type, &SUPPORTED_SPORTS);
+
+    let simulation_buttons = SUPPORTED_SPORTS
+        .iter()
+        .map(|sport| {
+            format!(r#"<button type="submit" name="sport_type" value="{sport}">{sport}</button>"#)
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
 
     format!(
         r#"<!doctype html>
@@ -179,6 +220,11 @@ fn render_admin_page(cfg: &AppConfig) -> String {
       <label>Publish Interval (ms): <input name="publish_interval_ms" type="number" value="{}"/></label><br/>
       <button type="submit">Save</button>
     </form>
+    <h2>Simulation</h2>
+    <p>Publish sample data for testing without a serial feed.</p>
+    <form method="post" action="/admin/simulate">
+      {}
+    </form>
   </body>
 </html>"#,
         controller_type_select,
@@ -187,13 +233,85 @@ fn render_admin_page(cfg: &AppConfig) -> String {
         cfg.mqtt_host,
         cfg.mqtt_port,
         cfg.mqtt_topic,
-        cfg.publish_interval_ms
+        cfg.publish_interval_ms,
+        simulation_buttons
     )
+}
+
+fn simulated_status_for_sport(
+    controller_type: &str,
+    sport_type: &str,
+) -> NormalizedScoreboardStatus {
+    let (segment_kind, segment_number, clock_main, home_score, away_score, extras) =
+        match sport_type {
+            "volleyball" => (
+                "set",
+                3,
+                "00:00",
+                21,
+                18,
+                serde_json::json!({"sets_home": 2, "sets_away": 1, "serving": "home"}),
+            ),
+            "football" => (
+                "quarter",
+                4,
+                "02:14",
+                28,
+                24,
+                serde_json::json!({"down": 3, "to_go": 7, "ball_on": 42}),
+            ),
+            "soccer" => (
+                "half",
+                2,
+                "67:33",
+                2,
+                1,
+                serde_json::json!({"shots_home": 11, "shots_away": 8, "fouls_home": 5, "fouls_away": 7}),
+            ),
+            "lacrosse" => (
+                "quarter",
+                3,
+                "03:51",
+                10,
+                9,
+                serde_json::json!({"penalties_home": 1, "penalties_away": 2}),
+            ),
+            _ => (
+                "period",
+                2,
+                "08:45",
+                56,
+                49,
+                serde_json::json!({"fouls_home": 3, "fouls_away": 4, "bonus_home": true, "bonus_away": false}),
+            ),
+        };
+
+    NormalizedScoreboardStatus {
+        schema_version: 1,
+        timestamp_rfc3339: chrono::Utc::now().to_rfc3339(),
+        controller_type: controller_type.to_string(),
+        sport_type: sport_type.to_string(),
+        clock_main: Some(clock_main.to_string()),
+        clock_secondary: Some("24".to_string()),
+        segment_kind: Some(segment_kind.to_string()),
+        segment_number: Some(segment_number),
+        segment_text: None,
+        home_score: Some(home_score),
+        away_score: Some(away_score),
+        home_timeouts: Some(2),
+        away_timeouts: Some(1),
+        possession: Some("home".to_string()),
+        extras: serde_json::json!({
+            "mode": "simulated",
+            "rtd_profile": rtd_profile_for_sport_name(sport_type),
+            "sport_specific": extras,
+        }),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::render_admin_page;
+    use super::{render_admin_page, simulated_status_for_sport};
     use crate::config::AppConfig;
 
     #[test]
@@ -203,6 +321,17 @@ mod tests {
 
         assert!(html.contains("<form method=\"post\" action=\"/admin\">"));
         assert!(!html.contains("\\\""));
+        assert!(html.contains("action=\"/admin/simulate\""));
+    }
+
+    #[test]
+    fn simulation_payload_includes_selected_sport_profile() {
+        let payload = simulated_status_for_sport("all_sport_5000", "football");
+
+        assert_eq!(payload.sport_type, "football");
+        assert_eq!(payload.segment_kind.as_deref(), Some("quarter"));
+        assert_eq!(payload.extras["mode"], "simulated");
+        assert_eq!(payload.extras["rtd_profile"], "rtd_football");
     }
 }
 
