@@ -23,7 +23,11 @@ pub fn router(state: WebState) -> Router {
     Router::new()
         .route("/", get(get_index))
         .route("/status.json", get(get_status_json))
+        .route("/%22/status.json/%22", get(get_status_json))
+        .route("/\"/status.json/\"", get(get_status_json))
         .route("/admin", get(get_admin).post(post_admin))
+        .route("/%22/admin/%22", get(get_admin).post(post_admin))
+        .route("/\"/admin/\"", get(get_admin).post(post_admin))
         .with_state(state)
 }
 
