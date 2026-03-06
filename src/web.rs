@@ -21,9 +21,27 @@ pub struct WebState {
 
 pub fn router(state: WebState) -> Router {
     Router::new()
+        .route("/", get(get_index))
         .route("/status.json", get(get_status_json))
         .route("/admin", get(get_admin).post(post_admin))
         .with_state(state)
+}
+
+async fn get_index() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html>
+<html>
+  <head><meta charset=\"utf-8\"/><title>Daktronics Gateway</title></head>
+  <body>
+    <h1>Daktronics Gateway</h1>
+    <p>Gateway is running.</p>
+    <ul>
+      <li><a href=\"/status.json\">Live status JSON</a></li>
+      <li><a href=\"/admin\">Admin settings</a></li>
+    </ul>
+  </body>
+</html>"#,
+    )
 }
 
 async fn get_status_json(State(state): State<WebState>) -> Json<NormalizedScoreboardStatus> {
