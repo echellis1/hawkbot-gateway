@@ -139,6 +139,14 @@ fn unauthorized() -> Response {
 }
 
 fn render_admin_page(cfg: &AppConfig) -> String {
+    let controller_type_select =
+        render_select("controller_type", &cfg.controller_type, &["all_sport_5000"]);
+    let sport_type_select = render_select(
+        "sport_type",
+        &cfg.sport_type,
+        &["basketball", "volleyball", "football", "soccer", "lacrosse"],
+    );
+
     format!(
         r#"<!doctype html>
 <html>
@@ -146,8 +154,8 @@ fn render_admin_page(cfg: &AppConfig) -> String {
   <body>
     <h1>Daktronics Gateway Admin</h1>
     <form method=\"post\" action=\"/admin\">
-      <label>Controller Type: <input name=\"controller_type\" value=\"{}\"/></label><br/>
-      <label>Sport Type: <input name=\"sport_type\" value=\"{}\"/></label><br/>
+      <label>Controller Type: {}</label><br/>
+      <label>Sport Type: {}</label><br/>
       <label>Serial Device: <input name=\"serial_device\" value=\"{}\"/></label><br/>
       <label>MQTT Host: <input name=\"mqtt_host\" value=\"{}\"/></label><br/>
       <label>MQTT Port: <input name=\"mqtt_port\" type=\"number\" value=\"{}\"/></label><br/>
@@ -157,12 +165,35 @@ fn render_admin_page(cfg: &AppConfig) -> String {
     </form>
   </body>
 </html>"#,
-        cfg.controller_type,
-        cfg.sport_type,
+        controller_type_select,
+        sport_type_select,
         cfg.serial_device,
         cfg.mqtt_host,
         cfg.mqtt_port,
         cfg.mqtt_topic,
         cfg.publish_interval_ms
     )
+}
+
+fn render_select(name: &str, selected: &str, options: &[&str]) -> String {
+    let mut html = format!("<select name=\"{name}\">");
+
+    for option in options {
+        if *option == selected {
+            html.push_str(&format!(
+                "<option value=\"{option}\" selected>{option}</option>"
+            ));
+        } else {
+            html.push_str(&format!("<option value=\"{option}\">{option}</option>"));
+        }
+    }
+
+    if !options.contains(&selected) {
+        html.push_str(&format!(
+            "<option value=\"{selected}\" selected>{selected}</option>"
+        ));
+    }
+
+    html.push_str("</select>");
+    html
 }
