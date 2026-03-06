@@ -35,13 +35,13 @@ async fn get_index() -> Html<&'static str> {
     Html(
         r#"<!doctype html>
 <html>
-  <head><meta charset=\"utf-8\"/><title>Daktronics Gateway</title></head>
+  <head><meta charset="utf-8"/><title>Daktronics Gateway</title></head>
   <body>
     <h1>Daktronics Gateway</h1>
     <p>Gateway is running.</p>
     <ul>
-      <li><a href=\"/status.json\">Live status JSON</a></li>
-      <li><a href=\"/admin\">Admin settings</a></li>
+      <li><a href="/status.json">Live status JSON</a></li>
+      <li><a href="/admin">Admin settings</a></li>
     </ul>
   </body>
 </html>"#,
@@ -150,18 +150,18 @@ fn render_admin_page(cfg: &AppConfig) -> String {
     format!(
         r#"<!doctype html>
 <html>
-  <head><meta charset=\"utf-8\"/><title>Scoreboard Admin</title></head>
+  <head><meta charset="utf-8"/><title>Scoreboard Admin</title></head>
   <body>
     <h1>Daktronics Gateway Admin</h1>
-    <form method=\"post\" action=\"/admin\">
+    <form method="post" action="/admin">
       <label>Controller Type: {}</label><br/>
       <label>Sport Type: {}</label><br/>
-      <label>Serial Device: <input name=\"serial_device\" value=\"{}\"/></label><br/>
-      <label>MQTT Host: <input name=\"mqtt_host\" value=\"{}\"/></label><br/>
-      <label>MQTT Port: <input name=\"mqtt_port\" type=\"number\" value=\"{}\"/></label><br/>
-      <label>MQTT Topic: <input name=\"mqtt_topic\" value=\"{}\"/></label><br/>
-      <label>Publish Interval (ms): <input name=\"publish_interval_ms\" type=\"number\" value=\"{}\"/></label><br/>
-      <button type=\"submit\">Save</button>
+      <label>Serial Device: <input name="serial_device" value="{}"/></label><br/>
+      <label>MQTT Host: <input name="mqtt_host" value="{}"/></label><br/>
+      <label>MQTT Port: <input name="mqtt_port" type="number" value="{}"/></label><br/>
+      <label>MQTT Topic: <input name="mqtt_topic" value="{}"/></label><br/>
+      <label>Publish Interval (ms): <input name="publish_interval_ms" type="number" value="{}"/></label><br/>
+      <button type="submit">Save</button>
     </form>
   </body>
 </html>"#,
@@ -173,6 +173,21 @@ fn render_admin_page(cfg: &AppConfig) -> String {
         cfg.mqtt_topic,
         cfg.publish_interval_ms
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_admin_page;
+    use crate::config::AppConfig;
+
+    #[test]
+    fn admin_form_uses_valid_html_attributes() {
+        let cfg = AppConfig::default();
+        let html = render_admin_page(&cfg);
+
+        assert!(html.contains("<form method=\"post\" action=\"/admin\">"));
+        assert!(!html.contains("\\\""));
+    }
 }
 
 fn render_select(name: &str, selected: &str, options: &[&str]) -> String {
