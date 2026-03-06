@@ -1,0 +1,18 @@
+[package]
+name = "hawkbot-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["json", "form"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde", "clock"] }
+daktronics-allsport-5000 = "0.4"
+rumqttc = "0.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-serial = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

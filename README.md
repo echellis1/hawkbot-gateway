@@ -1,0 +1,62 @@
+# Daktronics RTD → MQTT + JSON Gateway
+
+Rust service that reads Daktronics All Sport 5000 RTD bytes from serial, normalizes them, publishes to MQTT, and exposes HTTP endpoints.
+
+## Features
+
+- Reads serial RTD stream (`/dev/ttyUSB0`, 19200 8N1 default)
+- Supports sport selection: basketball, volleyball, football, soccer, lacrosse
+- Normalized scoreboard schema on:
+  - MQTT status topic (`scoreboard/status` default)
+  - HTTP `GET /status.json`
+- Health topic (`scoreboard/health`)
+- Config topic (`scoreboard/config`) when config changes
+- Basic Auth protected admin form at `GET/POST /admin`
+- Live config updates restart the decoder loop
+- Serial reconnect every 2 seconds on disconnect
+
+## Run
+
+```bash
+cargo run
+```
+
+Server listens on `0.0.0.0:8080`.
+
+## Configuration
+
+`config.json` is auto-created if missing.
+
+Important fields:
+
+- `controller_type`
+- `sport_type`
+- `serial_device`
+- `baud`
+- `mqtt_host`
+- `mqtt_port`
+- `mqtt_topic`
+- `mqtt_retain`
+- `publish_interval_ms`
+- `admin_user`
+- `admin_pass`
+
+## MQTT payloads
+
+- `scoreboard/status`: normalized scoreboard JSON
+- `scoreboard/health`: runtime health (`ok`, serial, decoder, mqtt)
+- `scoreboard/config`: current runtime config
+
+## Systemd deployment
+
+Copy service file:
+
+```bash
+sudo cp deploy/scoreboard-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now scoreboard-gateway.service
+```
+
+## Notes
+
+- The decoder module wires in `daktronics-allsport-5000` sport and RTD types and provides a placeholder byte-to-schema mapping. Replace `synthesize_payload` with direct crate field mapping for production.
