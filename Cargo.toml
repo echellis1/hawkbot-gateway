@@ -10,6 +10,8 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde", "clock"] }
 daktronics-allsport-5000 = "0.4"
 rumqttc = "0.24"
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
