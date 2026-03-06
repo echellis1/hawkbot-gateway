@@ -34,7 +34,8 @@ async fn get_admin(State(state): State<WebState>, headers: HeaderMap) -> Respons
     if !authorized(&state, &headers).await {
         return unauthorized();
     }
-    Html(render_admin_page(&state.config.read().await)).into_response()
+    let cfg = state.config.read().await.clone();
+    Html(render_admin_page(&cfg)).into_response()
 }
 
 #[derive(Debug, Deserialize)]

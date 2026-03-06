@@ -1,10 +1,6 @@
 use crate::config::AppConfig;
 use crate::schema::NormalizedScoreboardStatus;
 use chrono::Utc;
-use daktronics_allsport_5000::{
-    FootballSport, RTDState, SimpleBasketballSport, SimpleHockeyLacrosseSport, SimpleSoccerSport,
-    SimpleVolleyballSport,
-};
 use serde_json::json;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
@@ -12,23 +8,23 @@ use tokio::sync::watch;
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{info, warn};
 
-#[allow(dead_code)]
-enum SportDecoder {
-    Basketball(SimpleBasketballSport),
-    Volleyball(SimpleVolleyballSport),
-    Football(FootballSport),
-    Soccer(SimpleSoccerSport),
-    Lacrosse(SimpleHockeyLacrosseSport),
+#[derive(Debug, Clone, Copy)]
+enum SportKind {
+    Basketball,
+    Volleyball,
+    Football,
+    Soccer,
+    Lacrosse,
 }
 
-impl SportDecoder {
+impl SportKind {
     fn from_sport_name(name: &str) -> Self {
         match name {
-            "volleyball" => Self::Volleyball(SimpleVolleyballSport::default()),
-            "football" => Self::Football(FootballSport::default()),
-            "soccer" => Self::Soccer(SimpleSoccerSport::default()),
-            "lacrosse" | "hockey" => Self::Lacrosse(SimpleHockeyLacrosseSport::default()),
-            _ => Self::Basketball(SimpleBasketballSport::default()),
+            "volleyball" => Self::Volleyball,
+            "football" => Self::Football,
+            "soccer" => Self::Soccer,
+            "lacrosse" | "hockey" => Self::Lacrosse,
+            _ => Self::Basketball,
         }
     }
 }
@@ -41,12 +37,18 @@ pub async fn run_decoder(
     let mut config_rx = config_rx;
     loop {
         let cfg = config_rx.borrow().clone();
-        let _selected = SportDecoder::from_sport_name(&cfg.sport_type);
-        let _state = RTDState::default();
+        let selected_sport = SportKind::from_sport_name(&cfg.sport_type);
+
         match tokio_serial::new(&cfg.serial_device, cfg.baud).open_native_async() {
             Ok(mut serial) => {
                 let _ = serial_connected_tx.send(true);
-                info!(device = %cfg.serial_device, baud = cfg.baud, "serial connected");
+                info!(
+                    device = %cfg.serial_device,
+                    baud = cfg.baud,
+                    sport = ?selected_sport,
+                    "serial connected"
+                );
+
                 let mut buffer = [0u8; 512];
                 loop {
                     tokio::select! {
