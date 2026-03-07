@@ -7,9 +7,6 @@ use tokio::sync::watch;
 use tracing::{error, info, warn};
 use std::fs;
 
-// Compatible types for rumqttc 0.24.0 (rustls 0.21/0.22)
-use rumqttc::tokio_rustls::rustls::{ClientConfig, RootCertStore, Certificate, PrivateKey};
-
 pub const HEALTH_TOPIC: &str = "scoreboard/health";
 
 #[derive(Clone)]
@@ -24,7 +21,6 @@ impl MqttPublisher {
         let mut options = MqttOptions::new(&config.mqtt_client_id, &config.mqtt_host, config.mqtt_port);
         options.set_keep_alive(Duration::from_secs(10));
         
-        // Credentials check
         if let (Some(u), Some(p)) = (&config.mqtt_username, &config.mqtt_password) {
             options.set_credentials(u, p);
         }
@@ -38,27 +34,29 @@ impl MqttPublisher {
 
         // --- mTLS Configuration ---
         if config.mqtt_use_tls {
-            let ca_path = config.mqtt_ca_file.as_ref().context("Missing CA file path in config")?;
-            let cert_path = config.mqtt_cert_file.as_ref().context("Missing Cert file path in config")?;
-            let key_path = config.mqtt_key_file.as_ref().context("Missing Key file path in config")?;
+            let ca_path = config.mqtt_ca_file.as_ref().context("Missing CA file path")?;
+            let cert_path = config.mqtt_cert_file.as_ref().context("Missing Cert file path")?;
+            let key_path = config.mqtt_key_file.as_ref().context("Missing Key file path")?;
 
-            let ca_bytes = fs::read(ca_path).context("Failed to read CA file")?;
-            let cert_bytes = fs::read(cert_path).context("Failed to read Client Cert file")?;
-            let key_bytes = fs::read(key_path).context("Failed to read Client Key file")?;
+            let ca_bytes = fs::read(ca_path).context("Failed to read CA")?;
+            let cert_bytes = fs::read(cert_path).context("Failed to read Cert")?;
+            let key_bytes = fs::read(key_path).context("Failed to read Key")?;
 
-            let mut root_store = RootCertStore::empty();
-            root_store.add(&Certificate(ca_bytes))
-                .map_err(|e| anyhow::anyhow!("Failed to add CA to root store: {}", e))?;
+            // 1. Create Root Store
+            let mut root_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
+            root_store.add(rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(ca_bytes))
+                .map_err(|e| anyhow::anyhow!("CA Error: {}", e))?;
 
-            let cert_chain = vec![Certificate(cert_bytes)];
-            let private_key = PrivateKey(key_bytes);
+            // 2. Prepare Client Cert and Private Key
+            let cert_chain = vec![rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(cert_bytes)];
+            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from_pem_slice(&key_bytes)
+                .map_err(|e| anyhow::anyhow!("Key Error: {}", e))?;
 
-            // Using with_safe_defaults() required for this rustls version
-            let client_config = ClientConfig::builder()
-                .with_safe_defaults()
+            // 3. Build TLS Config (Using the modern builder available in 0.23+)
+            let client_config = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
                 .with_root_certificates(root_store)
                 .with_client_auth_cert(cert_chain, private_key)
-                .map_err(|e| anyhow::anyhow!("TLS Config Error: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("TLS Builder Error: {}", e))?;
 
             options.set_transport(Transport::tls_with_config(client_config.into()));
         }
@@ -77,13 +75,10 @@ impl MqttPublisher {
         ))
     }
 
-    /// Publishes the current application configuration to a dedicated topic
     pub async fn publish_config(&self, config: &AppConfig) {
         let topic = format!("devices/{}/config", config.mqtt_client_id);
         if let Err(err) = self.publish_json(&topic, config, true).await {
-            error!(error = ?err, "Failed to publish config to {}", topic);
-        } else {
-            info!("Successfully published config to {}", topic);
+            error!(error = ?err, "failed to publish config");
         }
     }
 
@@ -105,16 +100,12 @@ impl MqttPublisher {
             match event_loop.poll().await {
                 Ok(Event::Incoming(Packet::ConnAck(_))) => {
                     let _ = mqtt_connected_tx.send(true);
-                    info!("✅ MQTT Connection Established");
+                    info!("✅ MQTT Connected");
                 }
-                Ok(Event::Incoming(Packet::Disconnect)) | Ok(Event::Outgoing(rumqttc::Outgoing::Disconnect)) => {
-                    let _ = mqtt_connected_tx.send(false);
-                    warn!("MQTT Connection Lost");
-                }
-                Ok(_) => {} // Handle other packets (SubAck, PubAck, etc.) if needed
+                Ok(_) => {}
                 Err(err) => {
                     let _ = mqtt_connected_tx.send(false);
-                    error!(error = ?err, "MQTT poll error, attempting reconnect in 5s...");
+                    error!(error = ?err, "MQTT Error, retrying...");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             }
@@ -125,18 +116,8 @@ impl MqttPublisher {
         self.mqtt_connected_tx.clone()
     }
 
-    pub fn status_topic(&self) -> &str {
-        &self.status_topic
-    }
-
     pub async fn publish_online(&self) {
-        let payload = serde_json::json!({
-            "ok": true,
-            "message": "online"
-        });
-
-        if let Err(err) = self.publish_json(HEALTH_TOPIC, &payload, true).await {
-            error!(error = ?err, "Failed to publish online health status");
-        }
+        let payload = serde_json::json!({ "ok": true, "message": "online" });
+        let _ = self.publish_json(HEALTH_TOPIC, &payload, true).await;
     }
 }
