@@ -1,0 +1,155 @@
+use crate::config::AppConfig;
+use anyhow::{Context, Result};
+use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS, Transport};
+use serde::Serialize;
+use std::fs;
+use std::io::BufReader;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::watch;
+use tokio_rustls::rustls::{
+    self,
+    client::ClientConfig,
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+    RootCertStore,
+};
+use tracing::{error, info, warn};
+
+pub const HEALTH_TOPIC: &str = "scoreboard/health";
+pub const CONFIG_TOPIC: &str = "scoreboard/config";
+
+#[derive(Clone)]
+pub struct MqttPublisher {
+    client: AsyncClient,
+    mqtt_connected_tx: watch::Sender<bool>,
+}
+
+impl MqttPublisher {
+    pub fn new(config: &AppConfig) -> Result<(Self, EventLoop, watch::Receiver<bool>)> {
+        let client_id = if config.mqtt_client_id.trim().is_empty() {
+            "hawkbot-gateway".to_string()
+        } else {
+            config.mqtt_client_id.clone()
+        };
+
+        let mut options = MqttOptions::new(client_id, &config.mqtt_host, config.mqtt_port);
+        options.set_keep_alive(Duration::from_secs(10));
+        options.set_last_will(LastWill::new(
+            HEALTH_TOPIC,
+            r#"{"ok":false,"message":"disconnected"}"#,
+            QoS::AtLeastOnce,
+            true,
+        ));
+
+        if let (Some(username), Some(password)) = (&config.mqtt_username, &config.mqtt_password) {
+            options.set_credentials(username, password);
+        }
+
+        if config.mqtt_use_tls {
+            let tls_config = build_tls_config(config)?;
+            options.set_transport(Transport::tls_with_config(tls_config.into()));
+        }
+
+        let (client, event_loop) = AsyncClient::new(options, 100);
+        let (tx, rx) = watch::channel(false);
+
+        Ok((
+            Self {
+                client,
+                mqtt_connected_tx: tx,
+            },
+            event_loop,
+            rx,
+        ))
+    }
+
+    pub async fn publish_json<T: Serialize>(
+        &self,
+        topic: &str,
+        payload: &T,
+        retain: bool,
+    ) -> Result<()> {
+        let bytes = serde_json::to_vec(payload)?;
+        self.client
+            .publish(topic, QoS::AtLeastOnce, retain, bytes)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn run_event_loop(
+        mut event_loop: EventLoop,
+        mqtt_connected_tx: watch::Sender<bool>,
+    ) {
+        loop {
+            match event_loop.poll().await {
+                Ok(Event::Incoming(Packet::ConnAck(_))) => {
+                    let _ = mqtt_connected_tx.send(true);
+                    info!("MQTT connected");
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    let _ = mqtt_connected_tx.send(false);
+                    warn!(error = ?err, "MQTT event loop error, reconnecting");
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
+        }
+    }
+
+    pub fn mqtt_connected_sender(&self) -> watch::Sender<bool> {
+        self.mqtt_connected_tx.clone()
+    }
+
+    pub async fn publish_config(&self, config: &AppConfig) {
+        if let Err(err) = self.publish_json(CONFIG_TOPIC, config, true).await {
+            error!(error = ?err, "failed to publish config");
+        }
+    }
+}
+
+fn build_tls_config(config: &AppConfig) -> Result<ClientConfig> {
+    let ca_path = config
+        .mqtt_ca_file
+        .as_deref()
+        .context("mqtt_use_tls=true but mqtt_ca_file is missing")?;
+    let cert_path = config
+        .mqtt_cert_file
+        .as_deref()
+        .context("mqtt_use_tls=true but mqtt_cert_file is missing")?;
+    let key_path = config
+        .mqtt_key_file
+        .as_deref()
+        .context("mqtt_use_tls=true but mqtt_key_file is missing")?;
+
+    let mut root_store = RootCertStore::empty();
+    let ca_pem = fs::read(ca_path).with_context(|| format!("failed to read CA file: {ca_path}"))?;
+    let mut ca_reader = BufReader::new(ca_pem.as_slice());
+    let ca_certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut ca_reader).collect::<std::result::Result<Vec<_>, _>>()?;
+    root_store.add_parsable_certificates(ca_certs);
+
+    let cert_pem =
+        fs::read(cert_path).with_context(|| format!("failed to read cert file: {cert_path}"))?;
+    let mut cert_reader = BufReader::new(cert_pem.as_slice());
+    let cert_chain: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut cert_reader).collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let key_pem =
+        fs::read(key_path).with_context(|| format!("failed to read key file: {key_path}"))?;
+    let mut key_reader = BufReader::new(key_pem.as_slice());
+
+    let mut keys: Vec<PrivatePkcs8KeyDer<'static>> =
+        rustls_pemfile::pkcs8_private_keys(&mut key_reader)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let private_key: PrivateKeyDer<'static> = keys
+        .pop()
+        .context("no PKCS#8 private key found in mqtt_key_file")?
+        .into();
+
+    let tls = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_client_auth_cert(cert_chain, private_key)?;
+
+    Ok(tls)
+}
