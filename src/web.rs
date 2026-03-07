@@ -447,39 +447,290 @@ fn render_admin_page(cfg: &AppConfig) -> String {
     let simulation_buttons = SUPPORTED_SPORTS
         .iter()
         .map(|sport| {
-            format!(r#"<button type="submit" name="sport_type" value="{sport}">{sport}</button>"#)
+            format!(r#"<button class="btn btn-secondary" type="submit" name="sport_type" value="{sport}">{sport}</button>"#)
         })
         .collect::<Vec<_>>()
         .join(" ");
 
     format!(
         r#"<!doctype html>
-<html>
-  <head><meta charset="utf-8"/><title>Scoreboard Admin</title></head>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Scoreboard Admin</title>
+    <style>
+      :root {{
+        color-scheme: dark;
+        --bg: #0c1221;
+        --surface: #101a30;
+        --surface-2: #162340;
+        --text: #ecf2ff;
+        --muted: #93a4c3;
+        --accent: #4d9eff;
+        --accent-strong: #2e78d2;
+        --border: rgba(147, 164, 195, 0.22);
+      }}
+
+      * {{ box-sizing: border-box; }}
+
+      body {{
+        margin: 0;
+        font-family: "Inter", "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top, rgba(77, 158, 255, 0.2), transparent 55%),
+          var(--bg);
+      }}
+
+      .app-shell {{
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 1rem;
+        padding: 1rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }}
+
+      .app-header,
+      .app-footer,
+      .section-card {{
+        background: linear-gradient(160deg, var(--surface), var(--surface-2));
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+      }}
+
+      .app-header,
+      .app-footer {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 1rem;
+        flex-wrap: wrap;
+      }}
+
+      .brand-title {{
+        margin: 0;
+        font-size: clamp(1.1rem, 2.6vw, 1.5rem);
+      }}
+
+      .brand-subtitle {{
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }}
+
+      .action-links {{
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }}
+
+      .action-link {{
+        text-decoration: none;
+        color: var(--text);
+        background: rgba(77, 158, 255, 0.15);
+        border: 1px solid rgba(77, 158, 255, 0.45);
+        border-radius: 0.65rem;
+        padding: 0.55rem 0.9rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }}
+
+      .action-link:hover {{
+        background: rgba(77, 158, 255, 0.25);
+      }}
+
+      .admin-main {{
+        display: grid;
+        gap: 1rem;
+      }}
+
+      .settings-grid {{
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      }}
+
+      .section-card {{
+        padding: 1rem;
+        display: grid;
+        gap: 0.85rem;
+      }}
+
+      .section-title {{
+        margin: 0;
+        font-size: 1rem;
+      }}
+
+      .section-description {{
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }}
+
+      .form-grid {{
+        display: grid;
+        gap: 0.75rem;
+      }}
+
+      .form-group {{
+        display: grid;
+        gap: 0.35rem;
+      }}
+
+      .form-group label {{
+        color: var(--muted);
+        font-size: 0.85rem;
+        font-weight: 600;
+      }}
+
+      input,
+      select {{
+        width: 100%;
+        border-radius: 0.65rem;
+        border: 1px solid var(--border);
+        background: rgba(12, 18, 33, 0.55);
+        color: var(--text);
+        padding: 0.55rem 0.65rem;
+      }}
+
+      .button-row {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }}
+
+      .btn {{
+        border: 1px solid transparent;
+        border-radius: 0.65rem;
+        padding: 0.6rem 0.95rem;
+        font-weight: 700;
+        color: var(--text);
+        cursor: pointer;
+      }}
+
+      .btn-primary {{
+        background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+        border-color: rgba(77, 158, 255, 0.7);
+      }}
+
+      .btn-secondary {{
+        background: rgba(77, 158, 255, 0.15);
+        border-color: rgba(77, 158, 255, 0.45);
+        text-transform: capitalize;
+      }}
+
+      .footer-note {{
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.85rem;
+      }}
+
+      @media (max-width: 768px) {{
+        .app-shell {{
+          padding: 0.75rem;
+        }}
+      }}
+    </style>
+  </head>
   <body>
-    <h1>Daktronics Gateway Admin</h1>
-    <form method="post" action="/admin">
-      <label>Controller Type: {}</label><br/>
-      <label>Sport Type: {}</label><br/>
-      <label>Serial Device: <input name="serial_device" value="{}"/></label><br/>
-      <label>MQTT Host: <input name="mqtt_host" value="{}"/></label><br/>
-      <label>MQTT Port: <input name="mqtt_port" type="number" value="{}"/></label><br/>
-      <label>MQTT Topic: <input name="mqtt_topic" value="{}"/></label><br/>
-      <label>Publish Interval (ms): <input name="publish_interval_ms" type="number" value="{}"/></label><br/>
-      <button type="submit">Save</button>
-    </form>
-    <h2>Simulation</h2>
-    <p>Publish sample data for testing without a serial feed.</p>
-    <form method="post" action="/admin/simulate">
-      {}
-    </form>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <h1 class="brand-title">Daktronics Gateway Admin</h1>
+          <p class="brand-subtitle">Configuration and simulation controls</p>
+        </div>
+        <nav class="action-links" aria-label="Primary actions">
+          <a class="action-link" href="/">Open Dashboard</a>
+          <a class="action-link" href="/status.json">View Status JSON</a>
+        </nav>
+      </header>
+
+      <main class="admin-main">
+        <form method="post" action="/admin" class="settings-grid">
+          <section class="section-card" aria-label="Connection settings">
+            <h2 class="section-title">Connection settings</h2>
+            <p class="section-description">Serial feed and MQTT broker details.</p>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="serial_device">Serial Device</label>
+                <input id="serial_device" name="serial_device" value="{}"/>
+              </div>
+              <div class="form-group">
+                <label for="mqtt_host">MQTT Host</label>
+                <input id="mqtt_host" name="mqtt_host" value="{}"/>
+              </div>
+              <div class="form-group">
+                <label for="mqtt_port">MQTT Port</label>
+                <input id="mqtt_port" name="mqtt_port" type="number" value="{}"/>
+              </div>
+            </div>
+          </section>
+
+          <section class="section-card" aria-label="Sport and controller settings">
+            <h2 class="section-title">Sport/controller settings</h2>
+            <p class="section-description">Select decoder profile and controller family.</p>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="controller_type">Controller Type</label>
+                {}
+              </div>
+              <div class="form-group">
+                <label for="sport_type">Sport Type</label>
+                {}
+              </div>
+            </div>
+          </section>
+
+          <section class="section-card" aria-label="Publish settings">
+            <h2 class="section-title">Publish settings</h2>
+            <p class="section-description">Topic and cadence used for outbound updates.</p>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="mqtt_topic">MQTT Topic</label>
+                <input id="mqtt_topic" name="mqtt_topic" value="{}"/>
+              </div>
+              <div class="form-group">
+                <label for="publish_interval_ms">Publish Interval (ms)</label>
+                <input id="publish_interval_ms" name="publish_interval_ms" type="number" value="{}"/>
+              </div>
+            </div>
+          </section>
+
+          <section class="section-card" aria-label="Save settings">
+            <h2 class="section-title">Save configuration</h2>
+            <p class="section-description">Apply changes to the active runtime config.</p>
+            <div class="button-row">
+              <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+          </section>
+        </form>
+
+        <section class="section-card" aria-label="Simulation controls">
+          <h2 class="section-title">Simulation controls</h2>
+          <p class="section-description">Publish sample sport payloads for testing without serial input.</p>
+          <form method="post" action="/admin/simulate">
+            <div class="button-row">
+              {}
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <p class="footer-note">Admin actions preserve existing backend routes and field names.</p>
+      </footer>
+    </div>
   </body>
 </html>"#,
-        controller_type_select,
-        sport_type_select,
         cfg.serial_device,
         cfg.mqtt_host,
         cfg.mqtt_port,
+        controller_type_select,
+        sport_type_select,
         cfg.mqtt_topic,
         cfg.publish_interval_ms,
         simulation_buttons
@@ -567,7 +818,7 @@ mod tests {
         let cfg = AppConfig::default();
         let html = render_admin_page(&cfg);
 
-        assert!(html.contains("<form method=\"post\" action=\"/admin\">"));
+        assert!(html.contains("<form method=\"post\" action=\"/admin\" class=\"settings-grid\">"));
         assert!(!html.contains("\\\""));
         assert!(html.contains("action=\"/admin/simulate\""));
     }
@@ -584,7 +835,7 @@ mod tests {
 }
 
 fn render_select(name: &str, selected: &str, options: &[&str]) -> String {
-    let mut html = format!("<select name=\"{name}\">");
+    let mut html = format!("<select id=\"{name}\" name=\"{name}\">");
 
     for option in options {
         if *option == selected {
