@@ -4,8 +4,9 @@ use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS,
 use serde::Serialize;
 use std::time::Duration;
 use tokio::sync::watch;
-use tracing::{error, info}; // Removed unused 'warn' to clear the warning
+use tracing::{error, info};
 use std::fs;
+use std::io::BufReader;
 
 pub const HEALTH_TOPIC: &str = "scoreboard/health";
 
@@ -50,10 +51,16 @@ impl MqttPublisher {
             // 2. Prepare Client Cert Chain
             let cert_chain = vec![rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(cert_bytes)];
             
-            // 3. Prepare Private Key (Using the most compatible manual loading method)
-            let key_string = std::string::String::from_utf8(key_bytes).context("Key file is not valid UTF-8")?;
-            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from_pem(&key_string)
-                .map_err(|e| anyhow::anyhow!("Key Parsing Error (Check if key is PKCS#8): {}", e))?;
+            // 3. Prepare Private Key using the most compatible manual PEM reader
+            let mut reader = BufReader::new(&key_bytes[..]);
+            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from_pem_slice(&key_bytes)
+                .or_else(|_| {
+                    // Fallback: Manually look for PKCS8 or RSA keys if the helper fails
+                    let mut reader = BufReader::new(&key_bytes[..]);
+                    rustls_pemfile::private_key(&mut reader)
+                        .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
+                        .context("No private key found in key file")
+                })?;
 
             // 4. Build TLS Config
             let client_config = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
