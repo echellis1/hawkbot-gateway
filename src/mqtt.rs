@@ -7,7 +7,6 @@ use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 pub const HEALTH_TOPIC: &str = "scoreboard/health";
-pub const CONFIG_TOPIC: &str = "scoreboard/config";
 
 #[derive(Clone)]
 pub struct MqttPublisher {
@@ -88,9 +87,4 @@ impl MqttPublisher {
         }
     }
 
-    pub async fn publish_config(&self, config: &AppConfig) {
-        if let Err(err) = self.publish_json(CONFIG_TOPIC, config, true).await {
-            error!(error = ?err, "failed to publish config");
-        }
-    }
 }
