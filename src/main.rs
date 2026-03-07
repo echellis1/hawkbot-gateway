@@ -5,7 +5,7 @@ mod schema;
 mod web;
 
 use crate::config::{load_or_create_config, AppConfig, SharedConfig, CONFIG_PATH};
-use crate::mqtt::{MqttPublisher, HEALTH_TOPIC};
+use crate::mqtt::MqttPublisher;
 use crate::schema::{HealthStatus, NormalizedScoreboardStatus};
 use anyhow::Result;
 use axum::Router;
