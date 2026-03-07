@@ -51,16 +51,14 @@ impl MqttPublisher {
             // 2. Prepare Client Cert Chain
             let cert_chain = vec![rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(cert_bytes)];
             
-            // 3. Prepare Private Key using the most compatible manual PEM reader
+            // 3. Manually parse the Private Key using pemfile
+            // This avoids the 'from_pem_slice' trait issue entirely
             let mut reader = BufReader::new(&key_bytes[..]);
-            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from_pem_slice(&key_bytes)
-                .or_else(|_| {
-                    // Fallback: Manually look for PKCS8 or RSA keys if the helper fails
-                    let mut reader = BufReader::new(&key_bytes[..]);
-                    rustls_pemfile::private_key(&mut reader)
-                        .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
-                        .context("No private key found in key file")
-                })?;
+            let key_der = rustls_pemfile::private_key(&mut reader)
+                .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
+                .context("No private key found in key file")?;
+
+            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
 
             // 4. Build TLS Config
             let client_config = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
@@ -87,9 +85,7 @@ impl MqttPublisher {
 
     pub async fn publish_config(&self, config: &AppConfig) {
         let topic = format!("devices/{}/config", config.mqtt_client_id);
-        if let Err(err) = self.publish_json(&topic, config, true).await {
-            error!(error = ?err, "failed to publish config");
-        }
+        let _ = self.publish_json(&topic, config, true).await;
     }
 
     pub async fn publish_json<T: Serialize>(
