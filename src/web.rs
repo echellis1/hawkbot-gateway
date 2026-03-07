@@ -39,15 +39,263 @@ pub fn router(state: WebState) -> Router {
 async fn get_index() -> Html<&'static str> {
     Html(
         r#"<!doctype html>
-<html>
-  <head><meta charset="utf-8"/><title>Daktronics Gateway</title></head>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Daktronics Gateway</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c1221;
+        --surface: #101a30;
+        --surface-2: #162340;
+        --text: #ecf2ff;
+        --muted: #93a4c3;
+        --accent: #4d9eff;
+        --accent-strong: #2e78d2;
+        --border: rgba(147, 164, 195, 0.22);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Inter", "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top, rgba(77, 158, 255, 0.2), transparent 55%),
+          var(--bg);
+      }
+
+      .app-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 1rem;
+        padding: 1rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      .app-header,
+      .scoreboard-card,
+      .info-grid,
+      .app-footer {
+        background: linear-gradient(160deg, var(--surface), var(--surface-2));
+        border: 1px solid var(--border);
+        border-radius: 1rem;
+      }
+
+      .app-header,
+      .app-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .brand-title {
+        margin: 0;
+        font-size: clamp(1.1rem, 2.6vw, 1.5rem);
+      }
+
+      .brand-subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .action-links {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      .action-link {
+        text-decoration: none;
+        color: var(--text);
+        background: rgba(77, 158, 255, 0.15);
+        border: 1px solid rgba(77, 158, 255, 0.45);
+        border-radius: 0.65rem;
+        padding: 0.55rem 0.9rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .action-link:hover {
+        background: rgba(77, 158, 255, 0.25);
+      }
+
+      .scoreboard-card {
+        padding: 1rem;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .teams-grid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 0.8rem;
+        align-items: stretch;
+      }
+
+      .team-panel {
+        background: rgba(12, 18, 33, 0.55);
+        border: 1px solid var(--border);
+        border-radius: 0.8rem;
+        padding: 0.8rem;
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .team-label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .team-name {
+        font-size: clamp(1.15rem, 3.5vw, 1.65rem);
+        font-weight: 700;
+      }
+
+      .score-value {
+        font-size: clamp(2rem, 8vw, 3.3rem);
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .game-meta {
+        min-width: 8rem;
+        text-align: center;
+        border-radius: 0.8rem;
+        border: 1px solid var(--border);
+        padding: 0.8rem;
+        background: rgba(12, 18, 33, 0.5);
+        display: grid;
+        place-content: center;
+        gap: 0.45rem;
+      }
+
+      .meta-label {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+      }
+
+      .meta-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+      }
+
+      .info-grid {
+        padding: 0.9rem;
+        display: grid;
+        gap: 0.7rem;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      }
+
+      .info-chip {
+        background: rgba(12, 18, 33, 0.55);
+        border: 1px solid var(--border);
+        border-radius: 0.7rem;
+        padding: 0.7rem;
+        display: grid;
+        gap: 0.15rem;
+      }
+
+      .info-chip .label {
+        color: var(--muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .info-chip .value {
+        font-size: 1rem;
+        font-weight: 700;
+      }
+
+      .footer-note {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 768px) {
+        .teams-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .game-meta {
+          order: -1;
+        }
+
+        .app-shell {
+          padding: 0.75rem;
+        }
+      }
+    </style>
+  </head>
   <body>
-    <h1>Daktronics Gateway</h1>
-    <p>Gateway is running.</p>
-    <ul>
-      <li><a href="/status.json">Live status JSON</a></li>
-      <li><a href="/admin">Admin settings</a></li>
-    </ul>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <h1 class="brand-title">Daktronics Gateway Dashboard</h1>
+          <p class="brand-subtitle">Live scoreboard relay and control surface</p>
+        </div>
+        <nav class="action-links" aria-label="Primary actions">
+          <a class="action-link" href="/status.json">View Status JSON</a>
+          <a class="action-link" href="/admin">Open Admin Panel</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="scoreboard-card" aria-label="Primary scoreboard">
+          <div class="teams-grid">
+            <article class="team-panel">
+              <span class="team-label">Home</span>
+              <span class="team-name">Home Team</span>
+              <span class="score-value">72</span>
+            </article>
+
+            <aside class="game-meta" aria-label="Game clock and period">
+              <span class="meta-label">Period</span>
+              <span class="meta-value">Q4</span>
+              <span class="meta-label">Clock</span>
+              <span class="meta-value">02:14</span>
+            </aside>
+
+            <article class="team-panel">
+              <span class="team-label">Away</span>
+              <span class="team-name">Away Team</span>
+              <span class="score-value">68</span>
+            </article>
+          </div>
+
+          <div class="info-grid" aria-label="Secondary game metadata">
+            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value">2</span></div>
+            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value">1</span></div>
+            <div class="info-chip"><span class="label">Home Fouls</span><span class="value">4</span></div>
+            <div class="info-chip"><span class="label">Away Fouls</span><span class="value">3</span></div>
+            <div class="info-chip"><span class="label">Possession</span><span class="value">Home</span></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <p class="footer-note">Gateway is running and ready for sport-specific overlays.</p>
+        <div class="action-links" aria-label="Footer actions">
+          <a class="action-link" href="/status.json">Status Feed</a>
+          <a class="action-link" href="/admin">Settings</a>
+        </div>
+      </footer>
+    </div>
   </body>
 </html>"#,
     )
