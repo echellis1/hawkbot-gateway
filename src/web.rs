@@ -66,30 +66,30 @@ async fn get_index() -> Html<&'static str> {
           <div class="teams-grid">
             <article class="team-panel">
               <span class="team-label">Home</span>
-              <span class="team-name">Home Team</span>
-              <span class="score-value">72</span>
+              <span class="team-name" id="home-team-name">Home Team</span>
+              <span class="score-value" id="home-score">--</span>
             </article>
 
             <aside class="game-meta" aria-label="Game clock and period">
               <span class="meta-label">Period</span>
-              <span class="meta-value">Q4</span>
+              <span class="meta-value" id="segment-display">--</span>
               <span class="meta-label">Clock</span>
-              <span class="meta-value">02:14</span>
+              <span class="meta-value" id="clock-main">--:--</span>
             </aside>
 
             <article class="team-panel">
               <span class="team-label">Away</span>
-              <span class="team-name">Away Team</span>
-              <span class="score-value">68</span>
+              <span class="team-name" id="away-team-name">Away Team</span>
+              <span class="score-value" id="away-score">--</span>
             </article>
           </div>
 
           <div class="info-grid" aria-label="Secondary game metadata">
-            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value">2</span></div>
-            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value">1</span></div>
-            <div class="info-chip"><span class="label">Home Fouls</span><span class="value">4</span></div>
-            <div class="info-chip"><span class="label">Away Fouls</span><span class="value">3</span></div>
-            <div class="info-chip"><span class="label">Possession</span><span class="value">Home</span></div>
+            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value" id="home-timeouts">--</span></div>
+            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value" id="away-timeouts">--</span></div>
+            <div class="info-chip"><span class="label">Home Fouls</span><span class="value" id="home-fouls">--</span></div>
+            <div class="info-chip"><span class="label">Away Fouls</span><span class="value" id="away-fouls">--</span></div>
+            <div class="info-chip"><span class="label">Possession</span><span class="value" id="possession">--</span></div>
           </div>
         </section>
       </main>
@@ -102,6 +102,83 @@ async fn get_index() -> Html<&'static str> {
         </div>
       </footer>
     </div>
+    <script>
+      (() => {
+        const DASHBOARD_STATUS_URL = '/status.json';
+        const POLL_MS = 500;
+
+        const byId = (id) => document.getElementById(id);
+        const textOrFallback = (value, fallback = '--') => {
+          if (value === null || value === undefined || value === '') {
+            return fallback;
+          }
+          return String(value);
+        };
+
+        const toTitleCase = (value) =>
+          String(value)
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (match) => match.toUpperCase());
+
+        const segmentLabel = (kind, number) => {
+          if (!kind && (number === null || number === undefined)) {
+            return '--';
+          }
+
+          if (kind && number !== null && number !== undefined) {
+            if (String(kind).toLowerCase() === 'quarter') {
+              return `Q${number}`;
+            }
+            return `${toTitleCase(kind)} ${number}`;
+          }
+
+          return toTitleCase(kind || number);
+        };
+
+        const setText = (id, value) => {
+          const node = byId(id);
+          if (node) {
+            node.textContent = value;
+          }
+        };
+
+        const updateFromStatus = (status) => {
+          const extras = status?.extras?.sport_specific ?? {};
+          const possessionRaw = textOrFallback(status?.possession);
+
+          setText('home-team-name', textOrFallback(extras?.home_team_name, 'Home Team'));
+          setText('away-team-name', textOrFallback(extras?.away_team_name, 'Away Team'));
+          setText('home-score', textOrFallback(status?.home_score));
+          setText('away-score', textOrFallback(status?.away_score));
+          setText('clock-main', textOrFallback(status?.clock_main, '--:--'));
+          setText('segment-display', segmentLabel(status?.segment_kind, status?.segment_number));
+          setText('home-timeouts', textOrFallback(status?.home_timeouts));
+          setText('away-timeouts', textOrFallback(status?.away_timeouts));
+          setText('home-fouls', textOrFallback(extras?.fouls_home));
+          setText('away-fouls', textOrFallback(extras?.fouls_away));
+          setText(
+            'possession',
+            possessionRaw === '--' ? possessionRaw : toTitleCase(possessionRaw),
+          );
+        };
+
+        const pollStatus = async () => {
+          try {
+            const response = await fetch(DASHBOARD_STATUS_URL, { cache: 'no-store' });
+            if (!response.ok) {
+              return;
+            }
+            const data = await response.json();
+            updateFromStatus(data);
+          } catch {
+            // Keep last visible values on intermittent failures.
+          }
+        };
+
+        pollStatus();
+        setInterval(pollStatus, POLL_MS);
+      })();
+    </script>
   </body>
 </html>"#,
     )
@@ -452,6 +529,17 @@ mod tests {
         assert!(html.contains("<form method=\"post\" action=\"/admin\" class=\"settings-grid\">"));
         assert!(!html.contains("\\\""));
         assert!(html.contains("action=\"/admin/simulate\""));
+    }
+
+    #[tokio::test]
+    async fn dashboard_contains_live_status_bindings() {
+        let page = super::get_index().await.0;
+
+        assert!(page.contains("id=\"home-score\""));
+        assert!(page.contains("id=\"away-score\""));
+        assert!(page.contains("id=\"clock-main\""));
+        assert!(page.contains("setInterval(pollStatus, POLL_MS)"));
+        assert!(page.contains("fetch(DASHBOARD_STATUS_URL"));
     }
 
     #[test]
