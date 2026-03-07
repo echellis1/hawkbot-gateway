@@ -95,7 +95,7 @@ async fn get_index() -> Html<&'static str> {
       </main>
 
       <footer class="app-footer">
-        <p class="footer-note">Gateway is running and ready for sport-specific overlays.</p>
+        <p class="footer-note">Gateway is running and ready for sport-specific overlays. <span id="status-indicator" data-field="status-indicator">Connecting…</span></p>
         <div class="action-links" aria-label="Footer actions">
           <a class="action-link" href="/status.json">Status Feed</a>
           <a class="action-link" href="/admin">Settings</a>
