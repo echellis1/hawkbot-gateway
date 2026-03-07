@@ -1,0 +1,242 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1428;
+  --bg-radial: rgba(37, 99, 235, 0.28);
+  --surface: #122242;
+  --surface-2: #1a2f57;
+  --surface-muted: rgba(8, 16, 33, 0.62);
+  --text: #ecf3ff;
+  --muted: #9db0d5;
+  --accent: #4d9eff;
+  --accent-strong: #2d74cc;
+  --border: rgba(157, 176, 213, 0.28);
+  --radius-lg: 1rem;
+  --radius-md: 0.8rem;
+  --radius-sm: 0.65rem;
+  --space-1: 0.35rem;
+  --space-2: 0.6rem;
+  --space-3: 0.8rem;
+  --space-4: 1rem;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, var(--bg-radial), transparent 55%),
+    var(--bg);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.app-header,
+.app-footer,
+.card,
+.scoreboard-card,
+.info-grid,
+.section-card {
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.app-header,
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.6vw, 1.5rem);
+}
+
+.brand-subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.action-links,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.action-link,
+.btn {
+  text-decoration: none;
+  color: var(--text);
+  border: 1px solid rgba(77, 158, 255, 0.45);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: rgba(77, 158, 255, 0.15);
+  cursor: pointer;
+}
+
+.action-link:hover,
+.btn:hover {
+  background: rgba(77, 158, 255, 0.24);
+}
+
+.btn {
+  border-color: transparent;
+  font-weight: 700;
+  padding: 0.6rem 0.95rem;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border-color: rgba(77, 158, 255, 0.7);
+}
+
+.btn-secondary {
+  background: rgba(77, 158, 255, 0.15);
+  border-color: rgba(77, 158, 255, 0.45);
+  text-transform: capitalize;
+}
+
+.scoreboard-card,
+.section-card {
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+.team-panel,
+.info-chip,
+.game-meta {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.team-panel {
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.team-label,
+.meta-label,
+.info-chip .label,
+.form-group label,
+.section-description,
+.footer-note {
+  color: var(--muted);
+}
+
+.team-label,
+.meta-label,
+.info-chip .label {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.team-name {
+  font-size: clamp(1.15rem, 3.5vw, 1.65rem);
+  font-weight: 700;
+}
+
+.score-value {
+  font-size: clamp(2rem, 8vw, 3.3rem);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.game-meta {
+  min-width: 8rem;
+  text-align: center;
+  padding: var(--space-3);
+  display: grid;
+  place-content: center;
+  gap: 0.45rem;
+}
+
+.meta-value,
+.info-chip .value {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.info-grid {
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.info-chip {
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.admin-main,
+.settings-grid,
+.form-grid,
+.form-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-main { gap: var(--space-4); }
+.settings-grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-4); }
+
+.section-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.section-description,
+.footer-note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+input,
+select {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  padding: 0.55rem 0.65rem;
+}
+
+@media (max-width: 768px) {
+  .teams-grid { grid-template-columns: 1fr; }
+  .game-meta { order: -1; }
+  .app-shell { padding: 0.75rem; }
+}
