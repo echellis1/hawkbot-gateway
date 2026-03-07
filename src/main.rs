@@ -5,13 +5,13 @@ mod schema;
 mod web;
 
 use crate::config::{load_or_create_config, AppConfig, SharedConfig, CONFIG_PATH};
-use crate::mqtt::MqttPublisher; // Removed HEALTH_TOPIC from here
-use crate::schema::{HealthStatus, NormalizedScoreboardStatus};
+use crate::mqtt::MqttPublisher;
+use crate::schema::NormalizedScoreboardStatus;
 use anyhow::Result;
 use axum::Router;
 use std::sync::Arc;
 use tokio::sync::{watch, RwLock};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    info!("🚀 Starting Hawkbot Gateway...");
+    info!("🚀 Starting Hawkbot Gateway (Status Only Mode)...");
 
     // 2. Load Configuration
     let config = load_or_create_config(CONFIG_PATH).await?;
@@ -32,10 +32,10 @@ async fn main() -> Result<()> {
     let initial = NormalizedScoreboardStatus::blank(&config.controller_type, &config.sport_type);
     let (status_tx, status_rx) = watch::channel(initial);
     let (config_tx, config_rx) = watch::channel(config.clone());
-    let (serial_connected_tx, serial_connected_rx) = watch::channel(false);
+    let (serial_connected_tx, _serial_connected_rx) = watch::channel(false);
 
     // 3. Initialize MQTT
-    let (mqtt, event_loop, mqtt_connected_rx) = MqttPublisher::new(&config)?;
+    let (mqtt, event_loop, _mqtt_connected_rx) = MqttPublisher::new(&config)?;
     info!("📡 MQTT Publisher initialized for {}:{}", config.mqtt_host, config.mqtt_port);
 
     // 4. Start the MQTT Event Loop
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
         mqtt.mqtt_connected_sender(),
     ));
 
-    // 5. Start Background Tasks
+    // 5. Start Background Tasks (Decoder and Status Publisher only)
     let decoder_handle = tokio::spawn(decoder::run_decoder(
         config_rx.clone(),
         status_tx.clone(),
@@ -57,30 +57,7 @@ async fn main() -> Result<()> {
         mqtt.clone(),
     ));
 
-    tokio::spawn(publish_health_loop(
-        serial_connected_rx,
-        mqtt_connected_rx.clone(),
-        mqtt.clone(),
-    ));
-
-    // 6. Push Initial Config
-    let mqtt_init_clone = mqtt.clone();
-    let config_init_clone = config.clone();
-    let mut mqtt_status_check = mqtt_connected_rx.clone();
-    
-    tokio::spawn(async move {
-        info!("⏳ Waiting for MQTT connection before sending config...");
-        if tokio::time::timeout(std::time::Duration::from_secs(10), mqtt_status_check.changed()).await.is_ok() {
-            if *mqtt_status_check.borrow() {
-                info!("✨ MQTT Connected! Sending initial config...");
-                mqtt_init_clone.publish_config(&config_init_clone).await;
-            }
-        } else {
-            warn!("⚠️ MQTT connection timed out; config will be published when connection is restored.");
-        }
-    });
-
-    // 7. Start the Web Server
+    // 6. Start the Web Server
     let app = build_router(shared_config, config_tx, status_tx, status_rx, mqtt);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     info!("✅ HTTP Server listening on 0.0.0.0:8080");
@@ -125,7 +102,7 @@ async fn publish_status_loop(
         let interval_ms = cfg.publish_interval_ms.max(100);
         let payload = status_rx.borrow().clone();
         
-        // Use the topic defined in your config (ensure config matches your ACL!)
+        // This is the ONLY data actively published by the gateway
         if let Err(err) = mqtt
             .publish_json(&cfg.mqtt_topic, &payload, cfg.mqtt_retain)
             .await
@@ -136,23 +113,6 @@ async fn publish_status_loop(
         tokio::select! {
             _ = tokio::time::sleep(std::time::Duration::from_millis(interval_ms)) => {}
             _ = config_rx.changed() => {}
-        }
-    }
-}
-
-async fn publish_health_loop(
-    mut serial_connected_rx: watch::Receiver<bool>,
-    mut mqtt_connected_rx: watch::Receiver<bool>,
-    mqtt: MqttPublisher,
-) {
-    loop {
-        // We use the internal publish_online which uses the correct dynamic topic
-        mqtt.publish_online().await;
-
-        tokio::select! {
-            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
-            _ = serial_connected_rx.changed() => {}
-            _ = mqtt_connected_rx.changed() => {}
         }
     }
 }
