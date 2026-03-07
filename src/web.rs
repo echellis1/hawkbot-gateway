@@ -85,8 +85,8 @@ async fn get_index() -> Html<&'static str> {
           </div>
 
           <div class="info-grid" aria-label="Secondary game metadata">
-            <div class="info-chip"><span class="label" id="info-label-1">Mode</span><span class="value" id="info-value-1">--</span></div>
-            <div class="info-chip"><span class="label" id="info-label-2">RTD Profile</span><span class="value" id="info-value-2">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-1">Home Timeouts</span><span class="value" id="info-value-1">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-2">Away Timeouts</span><span class="value" id="info-value-2">--</span></div>
             <div class="info-chip"><span class="label" id="info-label-3">Detail 1</span><span class="value" id="info-value-3">--</span></div>
             <div class="info-chip"><span class="label" id="info-label-4">Detail 2</span><span class="value" id="info-value-4">--</span></div>
             <div class="info-chip"><span class="label" id="info-label-5">Detail 3</span><span class="value" id="info-value-5">--</span></div>
@@ -174,8 +174,8 @@ async fn get_index() -> Html<&'static str> {
           const details = sportSpecificEntries(status, sportSpecific);
 
           const chips = [
-            ['mode', extras?.mode],
-            ['rtd_profile', extras?.rtd_profile],
+            ['home_timeouts', status?.home_timeouts],
+            ['away_timeouts', status?.away_timeouts],
             ...details,
           ];
 
