@@ -12,11 +12,12 @@ pub const CONFIG_TOPIC: &str = "scoreboard/config";
 #[derive(Clone)]
 pub struct MqttPublisher {
     client: AsyncClient,
+    status_topic: String,
     mqtt_connected_tx: watch::Sender<bool>,
 }
 
 impl MqttPublisher {
-    pub fn new(config: &AppConfig) -> (Self, EventLoop, watch::Receiver<bool>) {
+    pub fn new(config: &AppConfig) -> Result<(Self, EventLoop, watch::Receiver<bool>)> {
         let mut options = MqttOptions::new("hawkbot-gateway", &config.mqtt_host, config.mqtt_port);
         options.set_keep_alive(Duration::from_secs(10));
         options.set_last_will(LastWill::new(
@@ -27,14 +28,15 @@ impl MqttPublisher {
         ));
         let (client, event_loop) = AsyncClient::new(options, 100);
         let (tx, rx) = watch::channel(false);
-        (
+        Ok((
             Self {
                 client,
+                status_topic: config.mqtt_topic.clone(),
                 mqtt_connected_tx: tx,
             },
             event_loop,
             rx,
-        )
+        ))
     }
 
     pub async fn publish_json<T: Serialize>(
@@ -69,6 +71,21 @@ impl MqttPublisher {
 
     pub fn mqtt_connected_sender(&self) -> watch::Sender<bool> {
         self.mqtt_connected_tx.clone()
+    }
+
+    pub fn status_topic(&self) -> &str {
+        &self.status_topic
+    }
+
+    pub async fn publish_online(&self) {
+        let payload = serde_json::json!({
+            "ok": true,
+            "message": "online"
+        });
+
+        if let Err(err) = self.publish_json(HEALTH_TOPIC, &payload, true).await {
+            error!(error = ?err, "failed to publish online status");
+        }
     }
 
     pub async fn publish_config(&self, config: &AppConfig) {
