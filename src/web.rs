@@ -66,42 +66,129 @@ async fn get_index() -> Html<&'static str> {
           <div class="teams-grid">
             <article class="team-panel">
               <span class="team-label">Home</span>
-              <span class="team-name">Home Team</span>
-              <span class="score-value">72</span>
+              <span class="team-name" id="home-team-name" data-field="home-team-name">Home Team</span>
+              <span class="score-value" id="home-score" data-field="home-score">--</span>
             </article>
 
             <aside class="game-meta" aria-label="Game clock and period">
               <span class="meta-label">Period</span>
-              <span class="meta-value">Q4</span>
+              <span class="meta-value" id="segment-display" data-field="segment-display">--</span>
               <span class="meta-label">Clock</span>
-              <span class="meta-value">02:14</span>
+              <span class="meta-value" id="clock-main" data-field="clock-main">--</span>
             </aside>
 
             <article class="team-panel">
               <span class="team-label">Away</span>
-              <span class="team-name">Away Team</span>
-              <span class="score-value">68</span>
+              <span class="team-name" id="away-team-name" data-field="away-team-name">Away Team</span>
+              <span class="score-value" id="away-score" data-field="away-score">--</span>
             </article>
           </div>
 
           <div class="info-grid" aria-label="Secondary game metadata">
-            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value">2</span></div>
-            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value">1</span></div>
-            <div class="info-chip"><span class="label">Home Fouls</span><span class="value">4</span></div>
-            <div class="info-chip"><span class="label">Away Fouls</span><span class="value">3</span></div>
-            <div class="info-chip"><span class="label">Possession</span><span class="value">Home</span></div>
+            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value" id="home-timeouts" data-field="home-timeouts">--</span></div>
+            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value" id="away-timeouts" data-field="away-timeouts">--</span></div>
+            <div class="info-chip"><span class="label">Home Fouls</span><span class="value" id="home-fouls" data-field="home-fouls">--</span></div>
+            <div class="info-chip"><span class="label">Away Fouls</span><span class="value" id="away-fouls" data-field="away-fouls">--</span></div>
+            <div class="info-chip"><span class="label">Possession</span><span class="value" id="possession" data-field="possession">--</span></div>
           </div>
         </section>
       </main>
 
       <footer class="app-footer">
-        <p class="footer-note">Gateway is running and ready for sport-specific overlays.</p>
+        <p class="footer-note">Gateway is running and ready for sport-specific overlays. <span id="status-indicator" data-field="status-indicator">Connecting…</span></p>
         <div class="action-links" aria-label="Footer actions">
           <a class="action-link" href="/status.json">Status Feed</a>
           <a class="action-link" href="/admin">Settings</a>
         </div>
       </footer>
     </div>
+
+    <script>
+      (() => {
+        const POLL_INTERVAL_MS = 500;
+        const FALLBACK_TEXT = "--";
+
+        const el = {
+          homeScore: document.getElementById("home-score"),
+          awayScore: document.getElementById("away-score"),
+          clockMain: document.getElementById("clock-main"),
+          segmentDisplay: document.getElementById("segment-display"),
+          homeTimeouts: document.getElementById("home-timeouts"),
+          awayTimeouts: document.getElementById("away-timeouts"),
+          possession: document.getElementById("possession"),
+          homeFouls: document.getElementById("home-fouls"),
+          awayFouls: document.getElementById("away-fouls"),
+          homeTeamName: document.getElementById("home-team-name"),
+          awayTeamName: document.getElementById("away-team-name"),
+          statusIndicator: document.getElementById("status-indicator"),
+        };
+
+        const displayValue = (value, fallback = FALLBACK_TEXT) =>
+          value === null || value === undefined || value === "" ? fallback : String(value);
+
+        const formatSegment = (kind, number) => {
+          if (!kind && (number === null || number === undefined)) return FALLBACK_TEXT;
+          if (!kind) return displayValue(number);
+
+          const normalizedKind = String(kind).trim().toLowerCase();
+          const prefixByKind = { period: "P", quarter: "Q", half: "H", set: "Set" };
+          const prefix = prefixByKind[normalizedKind] || kind;
+          const numberText = number === null || number === undefined ? "" : String(number);
+          return `${prefix}${numberText ? ` ${numberText}` : ""}`.trim();
+        };
+
+        const titleCase = (value) => {
+          const text = displayValue(value, "").toLowerCase();
+          if (!text) return FALLBACK_TEXT;
+          return text.charAt(0).toUpperCase() + text.slice(1);
+        };
+
+        const getTeamName = (status, side, fallback) => {
+          const extras = status?.extras;
+          const directName = extras?.[`${side}_name`]
+            ?? extras?.team_names?.[side]
+            ?? extras?.sport_specific?.[`${side}_name`]
+            ?? extras?.sport_specific?.team_names?.[side];
+
+          return displayValue(directName, fallback);
+        };
+
+        const render = (status) => {
+          el.homeScore.textContent = displayValue(status.home_score);
+          el.awayScore.textContent = displayValue(status.away_score);
+          el.clockMain.textContent = displayValue(status.clock_main);
+          el.segmentDisplay.textContent = formatSegment(status.segment_kind, status.segment_number);
+          el.homeTimeouts.textContent = displayValue(status.home_timeouts);
+          el.awayTimeouts.textContent = displayValue(status.away_timeouts);
+          el.possession.textContent = titleCase(status.possession);
+          el.homeFouls.textContent = displayValue(status.extras?.sport_specific?.fouls_home);
+          el.awayFouls.textContent = displayValue(status.extras?.sport_specific?.fouls_away);
+          el.homeTeamName.textContent = getTeamName(status, "home", "Home Team");
+          el.awayTeamName.textContent = getTeamName(status, "away", "Away Team");
+        };
+
+        const setIndicator = (text) => {
+          if (el.statusIndicator) {
+            el.statusIndicator.textContent = text;
+          }
+        };
+
+        const update = async () => {
+          try {
+            const response = await fetch("/status.json", { cache: "no-store" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const status = await response.json();
+            render(status);
+            setIndicator("Live");
+          } catch (_error) {
+            setIndicator("Offline");
+          }
+        };
+
+        update();
+        window.setInterval(update, POLL_INTERVAL_MS);
+      })();
+    </script>
   </body>
 </html>"#,
     )
