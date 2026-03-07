@@ -90,6 +90,7 @@ async fn get_index() -> Html<&'static str> {
             <div class="info-chip"><span class="label" id="info-label-3">Detail 1</span><span class="value" id="info-value-3">--</span></div>
             <div class="info-chip"><span class="label" id="info-label-4">Detail 2</span><span class="value" id="info-value-4">--</span></div>
             <div class="info-chip"><span class="label" id="info-label-5">Detail 3</span><span class="value" id="info-value-5">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-6">Detail 6</span><span class="value" id="info-value-6">--</span></div>
           </div>
         </section>
       </main>
@@ -179,7 +180,7 @@ async fn get_index() -> Html<&'static str> {
             ...details,
           ];
 
-          return chips.slice(0, 5);
+          return chips.slice(0, 6);
         };
 
         const updateFromStatus = (status) => {
@@ -192,7 +193,7 @@ async fn get_index() -> Html<&'static str> {
           setText('clock-main', textOrFallback(status?.clock_main, '--:--'));
           setText('segment-display', segmentLabel(status?.segment_kind, status?.segment_number));
 
-          for (let i = 0; i < 5; i += 1) {
+          for (let i = 0; i < 6; i += 1) {
             const chip = infoChips[i];
             const index = i + 1;
             if (chip) {
