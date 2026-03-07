@@ -85,11 +85,11 @@ async fn get_index() -> Html<&'static str> {
           </div>
 
           <div class="info-grid" aria-label="Secondary game metadata">
-            <div class="info-chip"><span class="label">Home Timeouts</span><span class="value" id="home-timeouts">--</span></div>
-            <div class="info-chip"><span class="label">Away Timeouts</span><span class="value" id="away-timeouts">--</span></div>
-            <div class="info-chip"><span class="label">Home Fouls</span><span class="value" id="home-fouls">--</span></div>
-            <div class="info-chip"><span class="label">Away Fouls</span><span class="value" id="away-fouls">--</span></div>
-            <div class="info-chip"><span class="label">Possession</span><span class="value" id="possession">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-1">Mode</span><span class="value" id="info-value-1">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-2">RTD Profile</span><span class="value" id="info-value-2">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-3">Detail 1</span><span class="value" id="info-value-3">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-4">Detail 2</span><span class="value" id="info-value-4">--</span></div>
+            <div class="info-chip"><span class="label" id="info-label-5">Detail 3</span><span class="value" id="info-value-5">--</span></div>
           </div>
         </section>
       </main>
@@ -142,24 +142,67 @@ async fn get_index() -> Html<&'static str> {
           }
         };
 
-        const updateFromStatus = (status) => {
-          const extras = status?.extras?.sport_specific ?? {};
-          const possessionRaw = textOrFallback(status?.possession);
+        const hasOwn = (obj, key) =>
+          Object.prototype.hasOwnProperty.call(obj, key);
 
-          setText('home-team-name', textOrFallback(extras?.home_team_name, 'Home Team'));
-          setText('away-team-name', textOrFallback(extras?.away_team_name, 'Away Team'));
+        const sportSpecificEntries = (status, sportSpecific) => {
+          const sport = textOrFallback(status?.sport_type, '').toLowerCase();
+
+          const preferredKeys = {
+            football: ['down', 'to_go', 'ball_on'],
+            basketball: ['fouls_home', 'fouls_away', 'bonus_home', 'bonus_away'],
+            volleyball: ['sets_home', 'sets_away', 'serving'],
+            soccer: ['shots_home', 'shots_away', 'fouls_home', 'fouls_away'],
+            lacrosse: ['penalties_home', 'penalties_away'],
+          };
+
+          const selectedKeys = preferredKeys[sport] ?? [];
+          const selectedEntries = selectedKeys
+            .filter((key) => hasOwn(sportSpecific, key))
+            .map((key) => [key, sportSpecific[key]]);
+
+          if (selectedEntries.length > 0) {
+            return selectedEntries;
+          }
+
+          return Object.entries(sportSpecific);
+        };
+
+        const buildInfoChips = (status) => {
+          const extras = status?.extras ?? {};
+          const sportSpecific = extras?.sport_specific ?? {};
+          const details = sportSpecificEntries(status, sportSpecific);
+
+          const chips = [
+            ['mode', extras?.mode],
+            ['rtd_profile', extras?.rtd_profile],
+            ...details,
+          ];
+
+          return chips.slice(0, 5);
+        };
+
+        const updateFromStatus = (status) => {
+          const infoChips = buildInfoChips(status);
+
+          setText('home-team-name', textOrFallback(status?.extras?.sport_specific?.home_team_name, 'Home Team'));
+          setText('away-team-name', textOrFallback(status?.extras?.sport_specific?.away_team_name, 'Away Team'));
           setText('home-score', textOrFallback(status?.home_score));
           setText('away-score', textOrFallback(status?.away_score));
           setText('clock-main', textOrFallback(status?.clock_main, '--:--'));
           setText('segment-display', segmentLabel(status?.segment_kind, status?.segment_number));
-          setText('home-timeouts', textOrFallback(status?.home_timeouts));
-          setText('away-timeouts', textOrFallback(status?.away_timeouts));
-          setText('home-fouls', textOrFallback(extras?.fouls_home));
-          setText('away-fouls', textOrFallback(extras?.fouls_away));
-          setText(
-            'possession',
-            possessionRaw === '--' ? possessionRaw : toTitleCase(possessionRaw),
-          );
+
+          for (let i = 0; i < 5; i += 1) {
+            const chip = infoChips[i];
+            const index = i + 1;
+            if (chip) {
+              setText(`info-label-${index}`, toTitleCase(chip[0]));
+              setText(`info-value-${index}`, textOrFallback(chip[1]));
+            } else {
+              setText(`info-label-${index}`, `Detail ${index}`);
+              setText(`info-value-${index}`, '--');
+            }
+          }
         };
 
         const pollStatus = async () => {
