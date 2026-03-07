@@ -43,20 +43,35 @@ impl MqttPublisher {
             let cert_bytes = fs::read(cert_path).context("Failed to read Cert")?;
             let key_bytes = fs::read(key_path).context("Failed to read Key")?;
 
-            // 1. Create Root Store
+            // 1. Create Root Store and load CA(s) correctly
             let mut root_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
-            root_store.add(rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(ca_bytes))
-                .map_err(|e| anyhow::anyhow!("CA Error: {}", e))?;
+            let mut ca_reader = BufReader::new(&ca_bytes[..]);
+            
+            // Collect all certs found in the CA file
+            let ca_certs: Vec<_> = rustls_pemfile::certs(&mut ca_reader)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .context("Failed to parse CA certificates")?;
+
+            if ca_certs.is_empty() {
+                anyhow::bail!("No certificates found in CA file at {}", ca_path);
+            }
+
+            for cert in ca_certs {
+                root_store.add(cert)
+                    .map_err(|e| anyhow::anyhow!("CA Store Error: {}", e))?;
+            }
 
             // 2. Prepare Client Cert Chain
-            let cert_chain = vec![rumqttc::tokio_rustls::rustls::pki_types::CertificateDer::from(cert_bytes)];
-            
-            // 3. Manually parse the Private Key using pemfile
-            // This avoids the 'from_pem_slice' trait issue entirely
-            let mut reader = BufReader::new(&key_bytes[..]);
-            let key_der = rustls_pemfile::private_key(&mut reader)
+            let mut cert_reader = BufReader::new(&cert_bytes[..]);
+            let cert_chain: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .context("Failed to parse Client certificate")?;
+
+            // 3. Prepare Private Key
+            let mut key_reader = BufReader::new(&key_bytes[..]);
+            let key_der = rustls_pemfile::private_key(&mut key_reader)
                 .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
-                .context("No private key found in key file")?;
+                .context("No private key found in key file. Ensure it is PEM formatted.")?;
 
             let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
 
@@ -106,12 +121,12 @@ impl MqttPublisher {
             match event_loop.poll().await {
                 Ok(Event::Incoming(Packet::ConnAck(_))) => {
                     let _ = mqtt_connected_tx.send(true);
-                    info!("✅ MQTT Connected");
+                    info!("✅ MQTT Connected successfully via mTLS");
                 }
                 Ok(_) => {}
                 Err(err) => {
                     let _ = mqtt_connected_tx.send(false);
-                    error!(error = ?err, "MQTT Error, retrying...");
+                    error!(error = ?err, "MQTT Error, retrying connection...");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             }
