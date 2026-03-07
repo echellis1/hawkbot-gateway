@@ -5,7 +5,7 @@ mod schema;
 mod web;
 
 use crate::config::{load_or_create_config, AppConfig, SharedConfig, CONFIG_PATH};
-use crate::mqtt::MqttPublisher;
+use crate::mqtt::MqttPublisher; // Removed HEALTH_TOPIC from here
 use crate::schema::{HealthStatus, NormalizedScoreboardStatus};
 use anyhow::Result;
 use axum::Router;
@@ -15,7 +15,7 @@ use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 1. Initialize Logging first so we can see what's happening
+    // 1. Initialize Logging
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -34,11 +34,11 @@ async fn main() -> Result<()> {
     let (config_tx, config_rx) = watch::channel(config.clone());
     let (serial_connected_tx, serial_connected_rx) = watch::channel(false);
 
-    // 3. Initialize MQTT (Does not block the network yet)
+    // 3. Initialize MQTT
     let (mqtt, event_loop, mqtt_connected_rx) = MqttPublisher::new(&config)?;
     info!("📡 MQTT Publisher initialized for {}:{}", config.mqtt_host, config.mqtt_port);
 
-    // 4. Start the MQTT Event Loop in the background
+    // 4. Start the MQTT Event Loop
     tokio::spawn(MqttPublisher::run_event_loop(
         event_loop,
         mqtt.mqtt_connected_sender(),
@@ -59,19 +59,17 @@ async fn main() -> Result<()> {
 
     tokio::spawn(publish_health_loop(
         serial_connected_rx,
-        mqtt_connected_rx.clone(), // Pass the receiver
+        mqtt_connected_rx.clone(),
         mqtt.clone(),
     ));
 
-    // 6. Push Initial Config (Non-blocking spawn)
-    // This prevents the app from hanging if the MQTT broker is slow/offline
+    // 6. Push Initial Config
     let mqtt_init_clone = mqtt.clone();
     let config_init_clone = config.clone();
     let mut mqtt_status_check = mqtt_connected_rx.clone();
     
     tokio::spawn(async move {
         info!("⏳ Waiting for MQTT connection before sending config...");
-        // Wait until MQTT is actually connected before trying the first push
         if tokio::time::timeout(std::time::Duration::from_secs(10), mqtt_status_check.changed()).await.is_ok() {
             if *mqtt_status_check.borrow() {
                 info!("✨ MQTT Connected! Sending initial config...");
@@ -127,7 +125,7 @@ async fn publish_status_loop(
         let interval_ms = cfg.publish_interval_ms.max(100);
         let payload = status_rx.borrow().clone();
         
-        // Only publish if we have data to send
+        // Use the topic defined in your config (ensure config matches your ACL!)
         if let Err(err) = mqtt
             .publish_json(&cfg.mqtt_topic, &payload, cfg.mqtt_retain)
             .await
@@ -148,16 +146,11 @@ async fn publish_health_loop(
     mqtt: MqttPublisher,
 ) {
     loop {
-        let health =
-            HealthStatus::running(*serial_connected_rx.borrow(), *mqtt_connected_rx.borrow());
-        
-        if let Err(err) = mqtt.publish_json(HEALTH_TOPIC, &health, true).await {
-            // Log as info/debug to avoid spamming errors during initial connection
-            info!("Health check pending (MQTT not yet ready): {}", err);
-        }
+        // We use the internal publish_online which uses the correct dynamic topic
+        mqtt.publish_online().await;
 
         tokio::select! {
-            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {} // Increased interval for health
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
             _ = serial_connected_rx.changed() => {}
             _ = mqtt_connected_rx.changed() => {}
         }
