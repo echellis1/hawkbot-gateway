@@ -1,1 +1,0 @@
-/opt/hawkbot-gateway/target/release/hawkbot-gateway: /opt/hawkbot-gateway/src/config.rs /opt/hawkbot-gateway/src/decoder.rs /opt/hawkbot-gateway/src/main.rs /opt/hawkbot-gateway/src/mqtt.rs /opt/hawkbot-gateway/src/schema.rs /opt/hawkbot-gateway/src/web.rs
