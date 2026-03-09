@@ -2,33 +2,33 @@ use crate::config::AppConfig;
 use anyhow::{Context, Result};
 use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS, Transport};
 use serde::Serialize;
+use std::fs;
+use std::io::BufReader;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{error, info};
-use std::fs;
-use std::io::BufReader;
 
 #[derive(Clone)]
 pub struct MqttPublisher {
     client: AsyncClient,
-    status_topic: String,
-    health_topic: String, // Dynamic health topic to satisfy ACL
+    base_topic: String,
+    health_topic: String,
     mqtt_connected_tx: watch::Sender<bool>,
 }
 
 impl MqttPublisher {
     pub fn new(config: &AppConfig) -> Result<(Self, EventLoop, watch::Receiver<bool>)> {
-        // Generate health topic based on your ACL pattern: scoreboard/${clientid}/#
-        let health_topic = format!("scoreboard/{}/health", config.mqtt_client_id);
-        
-        let mut options = MqttOptions::new(&config.mqtt_client_id, &config.mqtt_host, config.mqtt_port);
+        let base_topic = format!("scoreboard/{}", config.mqtt_client_id);
+        let health_topic = format!("{}/health", base_topic);
+
+        let mut options =
+            MqttOptions::new(&config.mqtt_client_id, &config.mqtt_host, config.mqtt_port);
         options.set_keep_alive(Duration::from_secs(10));
-        
+
         if let (Some(u), Some(p)) = (&config.mqtt_username, &config.mqtt_password) {
             options.set_credentials(u, p);
         }
 
-        // Use the ACL-compliant topic for the Last Will
         options.set_last_will(LastWill::new(
             &health_topic,
             r#"{"ok":false,"message":"disconnected"}"#,
@@ -36,7 +36,6 @@ impl MqttPublisher {
             true,
         ));
 
-        // --- mTLS Configuration ---
         if config.mqtt_use_tls {
             let ca_path = config.mqtt_ca_file.as_ref().context("Missing CA file path")?;
             let cert_path = config.mqtt_cert_file.as_ref().context("Missing Cert file path")?;
@@ -48,7 +47,7 @@ impl MqttPublisher {
 
             let mut root_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
             let mut ca_reader = BufReader::new(&ca_bytes[..]);
-            
+
             let ca_certs: Vec<_> = rustls_pemfile::certs(&mut ca_reader)
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .context("Failed to parse CA certificates")?;
@@ -58,7 +57,8 @@ impl MqttPublisher {
             }
 
             for cert in ca_certs {
-                root_store.add(cert)
+                root_store
+                    .add(cert)
                     .map_err(|e| anyhow::anyhow!("CA Store Error: {}", e))?;
             }
 
@@ -72,7 +72,8 @@ impl MqttPublisher {
                 .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
                 .context("No private key found in key file.")?;
 
-            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
+            let private_key =
+                rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
 
             let client_config = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
                 .with_root_certificates(root_store)
@@ -88,7 +89,7 @@ impl MqttPublisher {
         Ok((
             Self {
                 client,
-                status_topic: config.mqtt_topic.clone(),
+                base_topic,
                 health_topic,
                 mqtt_connected_tx: tx,
             },
@@ -97,10 +98,32 @@ impl MqttPublisher {
         ))
     }
 
+    pub fn status_topic(&self) -> String {
+        format!("{}/status", self.base_topic)
+    }
+
+    pub fn json_topic(&self) -> String {
+        format!("{}/json", self.base_topic)
+    }
+
+    pub fn xml_topic(&self) -> String {
+        format!("{}/xml", self.base_topic)
+    }
+
+    pub fn config_topic(&self) -> String {
+        format!("{}/config", self.base_topic)
+    }
+
+    pub fn health_topic(&self) -> &str {
+        &self.health_topic
+    }
+
+    pub fn command_topic(client_id: &str) -> String {
+        format!("devices/{}/commands/#", client_id)
+    }
+
     pub async fn publish_config(&self, config: &AppConfig) {
-        // Update: Config topic also needs to match scoreboard/${clientid}/#
-        let topic = format!("scoreboard/{}/config", config.mqtt_client_id);
-        let _ = self.publish_json(&topic, config, true).await;
+        let _ = self.publish_json(&self.config_topic(), config, true).await;
     }
 
     pub async fn publish_json<T: Serialize>(
@@ -116,17 +139,20 @@ impl MqttPublisher {
         Ok(())
     }
 
-    pub async fn run_event_loop(mut event_loop: EventLoop, mqtt_connected_tx: watch::Sender<bool>) {
+    pub async fn run_event_loop(
+        mut event_loop: EventLoop,
+        mqtt_connected_tx: watch::Sender<bool>,
+    ) {
         loop {
             match event_loop.poll().await {
                 Ok(Event::Incoming(Packet::ConnAck(_))) => {
                     let _ = mqtt_connected_tx.send(true);
-                    info!("✅ MQTT Connected (ACL Validated)");
+                    info!("✅ MQTT Connected");
                 }
                 Ok(_) => {}
                 Err(err) => {
                     let _ = mqtt_connected_tx.send(false);
-                    error!(error = ?err, "MQTT Connection Lost (Check ACLs if this persists)");
+                    error!(error = ?err, "MQTT Connection Lost");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             }
@@ -139,7 +165,6 @@ impl MqttPublisher {
 
     pub async fn publish_online(&self) {
         let payload = serde_json::json!({ "ok": true, "message": "online" });
-        // Use dynamic topic
-        let _ = self.publish_json(&self.health_topic, &payload, true).await;
+        let _ = self.publish_json(self.health_topic(), &payload, true).await;
     }
 }
