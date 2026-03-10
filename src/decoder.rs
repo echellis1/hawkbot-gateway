@@ -9,6 +9,7 @@ use tokio_serial::SerialPortBuilderExt;
 use tracing::{info, warn};
 
 const FOOTBALL_RTD_FRAME_LEN: usize = 240;
+const MAX_FOOTBALL_ACCUMULATOR_BYTES: usize = FOOTBALL_RTD_FRAME_LEN * 32;
 
 #[derive(Clone, Copy)]
 enum FieldJustification {
@@ -82,7 +83,10 @@ pub async fn run_decoder(
                                     let read_bytes = &buffer[..n];
                                     if matches!(selected_sport, SportKind::Football) {
                                         frame_buffer.extend_from_slice(read_bytes);
-                                        let frames = drain_fixed_frames(&mut frame_buffer, FOOTBALL_RTD_FRAME_LEN);
+                                        let frames = extract_football_rtd_frames(
+                                            &mut frame_buffer,
+                                            MAX_FOOTBALL_ACCUMULATOR_BYTES,
+                                        );
                                         for frame in frames {
                                             let payload = synthesize_payload(&cfg, &frame);
                                             let _ = status_tx.send(payload);
@@ -260,9 +264,63 @@ fn drain_fixed_frames(buffer: &mut Vec<u8>, frame_len: usize) -> Vec<Vec<u8>> {
     out
 }
 
+fn is_plausible_football_rtd_frame(frame: &[u8]) -> bool {
+    if frame.len() != FOOTBALL_RTD_FRAME_LEN {
+        return false;
+    }
+
+    // All Sport 5000 "Enhanced RTD" football publishes fixed-width 240-byte ASCII frames.
+    // Use key numeric field ranges to recover alignment when noise bytes appear in stream.
+    const DIGIT_OR_SPACE_RANGES: &[(usize, usize)] = &[
+        (0, 2),     // clock item 1
+        (5, 7),     // clock item 2
+        (107, 111), // home score
+        (111, 115), // away score
+        (121, 123), // home timeouts
+        (129, 131), // away timeouts
+        (141, 143), // quarter
+        (219, 221), // ball on
+        (221, 223), // down
+        (224, 226), // to go
+    ];
+
+    DIGIT_OR_SPACE_RANGES.iter().all(|(start, end)| {
+        frame[*start..*end]
+            .iter()
+            .all(|b| b.is_ascii_digit() || *b == b' ')
+    })
+}
+
+fn extract_football_rtd_frames(buffer: &mut Vec<u8>, max_buffer_len: usize) -> Vec<Vec<u8>> {
+    if buffer.len() > max_buffer_len {
+        warn!(
+            buffer_len = buffer.len(),
+            max_buffer_len, "football RTD accumulator exceeded limit; trimming oldest bytes"
+        );
+        let keep_from = buffer.len().saturating_sub(FOOTBALL_RTD_FRAME_LEN);
+        buffer.drain(..keep_from);
+    }
+
+    let mut out = Vec::new();
+    while buffer.len() >= FOOTBALL_RTD_FRAME_LEN {
+        if is_plausible_football_rtd_frame(&buffer[..FOOTBALL_RTD_FRAME_LEN]) {
+            let frame: Vec<u8> = buffer.drain(..FOOTBALL_RTD_FRAME_LEN).collect();
+            out.push(frame);
+            continue;
+        }
+
+        warn!("discarding byte while searching for football RTD frame boundary");
+        buffer.remove(0);
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{drain_fixed_frames, synthesize_payload};
+    use super::{
+        drain_fixed_frames, extract_football_rtd_frames, synthesize_payload, FOOTBALL_RTD_FRAME_LEN,
+    };
     use crate::config::AppConfig;
 
     fn set_field(frame: &mut [u8], position_1_based: usize, value: &str) {
@@ -333,5 +391,56 @@ mod tests {
 
         let payload = synthesize_payload(&cfg, &frame);
         assert_eq!(payload.clock_main.as_deref(), Some("1:05"));
+    }
+
+    #[test]
+    fn football_frames_split_across_reads_are_reassembled() {
+        let mut frame = vec![b' '; FOOTBALL_RTD_FRAME_LEN];
+        set_field(&mut frame, 1, "10");
+        set_field(&mut frame, 6, "00");
+
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(&frame[..100]);
+        let first = extract_football_rtd_frames(&mut buffer, FOOTBALL_RTD_FRAME_LEN * 8);
+        assert!(first.is_empty());
+
+        buffer.extend_from_slice(&frame[100..]);
+        let second = extract_football_rtd_frames(&mut buffer, FOOTBALL_RTD_FRAME_LEN * 8);
+        assert_eq!(second, vec![frame]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn football_multiple_frames_in_one_read_are_extracted() {
+        let mut frame1 = vec![b' '; FOOTBALL_RTD_FRAME_LEN];
+        set_field(&mut frame1, 1, "11");
+        set_field(&mut frame1, 6, "11");
+
+        let mut frame2 = vec![b' '; FOOTBALL_RTD_FRAME_LEN];
+        set_field(&mut frame2, 1, "12");
+        set_field(&mut frame2, 6, "34");
+
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(&frame1);
+        buffer.extend_from_slice(&frame2);
+
+        let frames = extract_football_rtd_frames(&mut buffer, FOOTBALL_RTD_FRAME_LEN * 8);
+        assert_eq!(frames, vec![frame1, frame2]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn football_leading_and_trailing_noise_is_handled() {
+        let mut frame = vec![b' '; FOOTBALL_RTD_FRAME_LEN];
+        set_field(&mut frame, 1, "09");
+        set_field(&mut frame, 6, "58");
+
+        let mut buffer = vec![0xFF, 0x00, 0x7F];
+        buffer.extend_from_slice(&frame);
+        buffer.extend_from_slice(&[0xFE, 0xFD]);
+
+        let frames = extract_football_rtd_frames(&mut buffer, FOOTBALL_RTD_FRAME_LEN * 8);
+        assert_eq!(frames, vec![frame]);
+        assert_eq!(buffer, vec![0xFE, 0xFD]);
     }
 }
