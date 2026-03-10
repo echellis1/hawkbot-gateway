@@ -88,6 +88,8 @@ Important fields:
 - `serial_device`
 - `baud`
 - `serial_debug_raw` (default `false`; emits truncated raw serial byte previews at debug level)
+- `serial_debug_publish` (default `false`; publishes compact serial debug samples to MQTT and stores recent samples in memory)
+- `serial_debug_topic` (optional; defaults to `<mqtt_topic_base>/debug/raw`, for example `scoreboard/debug/raw`)
 - `mqtt_host`
 - `mqtt_port`
 - `mqtt_topic`
@@ -97,7 +99,7 @@ Important fields:
 - `admin_pass`
 
 
-### Raw serial debug logging
+### Raw serial debug logging and publishing
 
 Enable structured raw frame logging (hex + ASCII preview) by setting `serial_debug_raw` in `config.json` or with an environment variable override:
 
@@ -105,7 +107,20 @@ Enable structured raw frame logging (hex + ASCII preview) by setting `serial_deb
 SERIAL_DEBUG_RAW=true cargo run
 ```
 
-Set to `false` to disable this mode (default).
+Enable compact debug sample publishing (timestamp, byte length, previews, sport/profile, and football frame index) with:
+
+```bash
+SERIAL_DEBUG_PUBLISH=true cargo run
+```
+
+By default, debug samples publish to a derived topic such as `scoreboard/debug/raw` (from `mqtt_topic=scoreboard/status`). Override with `SERIAL_DEBUG_TOPIC` if needed. Recent samples are also kept in a small in-memory ring buffer and exposed via `GET /debug/serial.json` (Basic Auth protected, same as `/admin`).
+
+#### Operational caveats
+
+- Debug samples can contain sensitive controller data.
+- Serial debug traffic can be high volume on busy links.
+- Keep `serial_debug_publish` disabled in normal operation; enable only for short diagnostics.
+- Debug MQTT publishes use low QoS and `retain=false` to reduce broker bloat.
 
 ## MQTT payloads
 

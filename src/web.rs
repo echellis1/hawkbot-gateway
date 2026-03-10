@@ -1,5 +1,5 @@
 use crate::config::{save_config, AppConfig, SharedConfig, CONFIG_PATH};
-use crate::decoder::rtd_profile_for_sport_name;
+use crate::decoder::{rtd_profile_for_sport_name, SharedSerialDebugBuffer};
 use crate::mqtt::MqttPublisher;
 use crate::schema::NormalizedScoreboardStatus;
 use axum::extract::{Form, State};
@@ -22,6 +22,7 @@ pub struct WebState {
     pub status_tx: watch::Sender<NormalizedScoreboardStatus>,
     pub status_rx: watch::Receiver<NormalizedScoreboardStatus>,
     pub mqtt: MqttPublisher,
+    pub serial_debug_samples: SharedSerialDebugBuffer,
 }
 
 pub fn router(state: WebState) -> Router {
@@ -31,6 +32,7 @@ pub fn router(state: WebState) -> Router {
         .route("/%22/status.json/%22", get(get_status_json))
         .route("/\"/status.json/\"", get(get_status_json))
         .route("/admin", get(get_admin).post(post_admin))
+        .route("/debug/serial.json", get(get_serial_debug_json))
         .route("/admin/simulate", axum::routing::post(post_admin_simulate))
         .route("/%22/admin/%22", get(get_admin).post(post_admin))
         .route("/\"/admin/\"", get(get_admin).post(post_admin))
@@ -230,6 +232,19 @@ async fn get_index() -> Html<&'static str> {
 
 async fn get_status_json(State(state): State<WebState>) -> Json<NormalizedScoreboardStatus> {
     Json(state.status_rx.borrow().clone())
+}
+
+async fn get_serial_debug_json(State(state): State<WebState>, headers: HeaderMap) -> Response {
+    if !authorized(&state, &headers).await {
+        return unauthorized();
+    }
+
+    let samples = {
+        let guard = state.serial_debug_samples.lock().await;
+        guard.iter().cloned().collect::<Vec<_>>()
+    };
+
+    Json(samples).into_response()
 }
 
 async fn get_admin(State(state): State<WebState>, headers: HeaderMap) -> Response {

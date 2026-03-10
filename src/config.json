@@ -16,5 +16,8 @@
   "mqtt_use_tls": false,
   "mqtt_ca_file": null,
   "mqtt_cert_file": null,
-  "mqtt_key_file": null
+  "mqtt_key_file": null,
+  "serial_debug_raw": false,
+  "serial_debug_publish": false,
+  "serial_debug_topic": null
 }

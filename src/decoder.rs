@@ -1,12 +1,34 @@
 use crate::config::AppConfig;
+use crate::mqtt::MqttPublisher;
 use crate::schema::NormalizedScoreboardStatus;
 use chrono::Utc;
+use rumqttc::QoS;
+use serde::Serialize;
 use serde_json::json;
+use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{debug, info, warn};
+
+pub const RAW_PREVIEW_MAX_BYTES: usize = 96;
+pub const SERIAL_DEBUG_BUFFER_CAPACITY: usize = 200;
+
+pub type SharedSerialDebugBuffer = Arc<Mutex<VecDeque<SerialDebugSample>>>;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SerialDebugSample {
+    pub timestamp_rfc3339: String,
+    pub byte_len: usize,
+    pub hex_preview: String,
+    pub ascii_preview: String,
+    pub sport: String,
+    pub rtd_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_index: Option<u64>,
+}
 
 #[derive(Debug, Clone, Copy)]
 enum SportKind {
@@ -42,8 +64,6 @@ impl SportKind {
 pub(crate) fn rtd_profile_for_sport_name(name: &str) -> &'static str {
     SportKind::from_sport_name(name).rtd_profile_name()
 }
-
-const RAW_PREVIEW_MAX_BYTES: usize = 96;
 
 fn format_hex_preview(bytes: &[u8], max: usize) -> String {
     let preview_len = bytes.len().min(max);
@@ -81,6 +101,8 @@ pub async fn run_decoder(
     config_rx: watch::Receiver<AppConfig>,
     status_tx: watch::Sender<NormalizedScoreboardStatus>,
     serial_connected_tx: watch::Sender<bool>,
+    mqtt: MqttPublisher,
+    serial_debug_samples: SharedSerialDebugBuffer,
 ) {
     let mut config_rx = config_rx;
     loop {
@@ -98,6 +120,7 @@ pub async fn run_decoder(
                     "serial connected"
                 );
 
+                let mut football_frame_index: u64 = 0;
                 let mut buffer = [0u8; 512];
                 loop {
                     tokio::select! {
@@ -115,6 +138,46 @@ pub async fn run_decoder(
                                             ascii_preview = %format_ascii_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
                                             "raw serial frame"
                                         );
+                                    }
+
+                                    let frame_index = match selected_sport {
+                                        SportKind::Football => {
+                                            football_frame_index = football_frame_index.saturating_add(1);
+                                            Some(football_frame_index)
+                                        }
+                                        _ => None,
+                                    };
+
+                                    if cfg.serial_debug_publish {
+                                        let sample = SerialDebugSample {
+                                            timestamp_rfc3339: Utc::now().to_rfc3339(),
+                                            byte_len: n,
+                                            hex_preview: format_hex_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
+                                            ascii_preview: format_ascii_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
+                                            sport: cfg.sport_type.clone(),
+                                            rtd_profile: selected_sport.rtd_profile_name().to_string(),
+                                            frame_index,
+                                        };
+
+                                        {
+                                            let mut guard = serial_debug_samples.lock().await;
+                                            if guard.len() >= SERIAL_DEBUG_BUFFER_CAPACITY {
+                                                guard.pop_front();
+                                            }
+                                            guard.push_back(sample.clone());
+                                        }
+
+                                        if let Err(err) = mqtt
+                                            .publish_json_with_qos(
+                                                &cfg.resolved_serial_debug_topic(),
+                                                &sample,
+                                                QoS::AtMostOnce,
+                                                false,
+                                            )
+                                            .await
+                                        {
+                                            warn!(error = ?err, "failed to publish serial debug payload");
+                                        }
                                     }
 
                                     let payload = synthesize_payload(&cfg, read_bytes);

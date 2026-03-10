@@ -2,11 +2,11 @@ use crate::config::AppConfig;
 use anyhow::{Context, Result};
 use rumqttc::{AsyncClient, Event, EventLoop, LastWill, MqttOptions, Packet, QoS, Transport};
 use serde::Serialize;
+use std::fs;
+use std::io::BufReader;
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{error, info};
-use std::fs;
-use std::io::BufReader;
 
 #[derive(Clone)]
 pub struct MqttPublisher {
@@ -20,10 +20,11 @@ impl MqttPublisher {
     pub fn new(config: &AppConfig) -> Result<(Self, EventLoop, watch::Receiver<bool>)> {
         // Generate health topic based on your ACL pattern: scoreboard/${clientid}/#
         let health_topic = format!("scoreboard/{}/health", config.mqtt_client_id);
-        
-        let mut options = MqttOptions::new(&config.mqtt_client_id, &config.mqtt_host, config.mqtt_port);
+
+        let mut options =
+            MqttOptions::new(&config.mqtt_client_id, &config.mqtt_host, config.mqtt_port);
         options.set_keep_alive(Duration::from_secs(10));
-        
+
         if let (Some(u), Some(p)) = (&config.mqtt_username, &config.mqtt_password) {
             options.set_credentials(u, p);
         }
@@ -38,9 +39,18 @@ impl MqttPublisher {
 
         // --- mTLS Configuration ---
         if config.mqtt_use_tls {
-            let ca_path = config.mqtt_ca_file.as_ref().context("Missing CA file path")?;
-            let cert_path = config.mqtt_cert_file.as_ref().context("Missing Cert file path")?;
-            let key_path = config.mqtt_key_file.as_ref().context("Missing Key file path")?;
+            let ca_path = config
+                .mqtt_ca_file
+                .as_ref()
+                .context("Missing CA file path")?;
+            let cert_path = config
+                .mqtt_cert_file
+                .as_ref()
+                .context("Missing Cert file path")?;
+            let key_path = config
+                .mqtt_key_file
+                .as_ref()
+                .context("Missing Key file path")?;
 
             let ca_bytes = fs::read(ca_path).context("Failed to read CA")?;
             let cert_bytes = fs::read(cert_path).context("Failed to read Cert")?;
@@ -48,7 +58,7 @@ impl MqttPublisher {
 
             let mut root_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
             let mut ca_reader = BufReader::new(&ca_bytes[..]);
-            
+
             let ca_certs: Vec<_> = rustls_pemfile::certs(&mut ca_reader)
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .context("Failed to parse CA certificates")?;
@@ -58,7 +68,8 @@ impl MqttPublisher {
             }
 
             for cert in ca_certs {
-                root_store.add(cert)
+                root_store
+                    .add(cert)
                     .map_err(|e| anyhow::anyhow!("CA Store Error: {}", e))?;
             }
 
@@ -72,7 +83,8 @@ impl MqttPublisher {
                 .map_err(|e| anyhow::anyhow!("Key Parse Error: {}", e))?
                 .context("No private key found in key file.")?;
 
-            let private_key = rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
+            let private_key =
+                rumqttc::tokio_rustls::rustls::pki_types::PrivateKeyDer::from(key_der);
 
             let client_config = rumqttc::tokio_rustls::rustls::ClientConfig::builder()
                 .with_root_certificates(root_store)
@@ -109,10 +121,19 @@ impl MqttPublisher {
         payload: &T,
         retain: bool,
     ) -> Result<()> {
+        self.publish_json_with_qos(topic, payload, QoS::AtLeastOnce, retain)
+            .await
+    }
+
+    pub async fn publish_json_with_qos<T: Serialize>(
+        &self,
+        topic: &str,
+        payload: &T,
+        qos: QoS,
+        retain: bool,
+    ) -> Result<()> {
         let bytes = serde_json::to_vec(payload)?;
-        self.client
-            .publish(topic, QoS::AtLeastOnce, retain, bytes)
-            .await?;
+        self.client.publish(topic, qos, retain, bytes).await?;
         Ok(())
     }
 

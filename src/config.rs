@@ -13,6 +13,10 @@ pub struct AppConfig {
     pub baud: u32,
     #[serde(default)]
     pub serial_debug_raw: bool,
+    #[serde(default)]
+    pub serial_debug_publish: bool,
+    #[serde(default)]
+    pub serial_debug_topic: Option<String>,
 
     pub mqtt_host: String,
     pub mqtt_port: u16,
@@ -40,6 +44,8 @@ impl Default for AppConfig {
             serial_device: "/dev/ttyUSB0".to_string(),
             baud: 19200,
             serial_debug_raw: false,
+            serial_debug_publish: false,
+            serial_debug_topic: None,
 
             mqtt_host: "127.0.0.1".to_string(),
             mqtt_port: 1883,
@@ -81,6 +87,12 @@ impl AppConfig {
         }
         if let Ok(v) = env::var("SERIAL_DEBUG_RAW") {
             self.serial_debug_raw = parse_bool(&v).unwrap_or(self.serial_debug_raw);
+        }
+        if let Ok(v) = env::var("SERIAL_DEBUG_PUBLISH") {
+            self.serial_debug_publish = parse_bool(&v).unwrap_or(self.serial_debug_publish);
+        }
+        if let Ok(v) = env::var("SERIAL_DEBUG_TOPIC") {
+            self.serial_debug_topic = if v.trim().is_empty() { None } else { Some(v) };
         }
 
         if let Ok(v) = env::var("MQTT_HOST") {
@@ -161,6 +173,28 @@ impl AppConfig {
         }
 
         Ok(())
+    }
+
+    pub fn resolved_serial_debug_topic(&self) -> String {
+        if let Some(topic) = &self.serial_debug_topic {
+            if !topic.trim().is_empty() {
+                return topic.clone();
+            }
+        }
+
+        let mut parts: Vec<&str> = self
+            .mqtt_topic
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        if !parts.is_empty() {
+            parts.pop();
+        }
+        if parts.is_empty() {
+            "debug/raw".to_string()
+        } else {
+            format!("{}/debug/raw", parts.join("/"))
+        }
     }
 }
 
