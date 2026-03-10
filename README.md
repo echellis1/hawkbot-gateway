@@ -102,6 +102,7 @@ Important fields:
 ### Raw serial debug logging and publishing
 
 Enable structured raw frame logging (hex + ASCII preview) by setting `serial_debug_raw` in `config.json` or with an environment variable override:
+When enabled, each raw frame is also appended to `serial-debug.log` in the gateway process working directory (for the provided systemd service: `/opt/hawkbot-gateway/serial-debug.log`). The file is created as soon as raw debug logging is enabled and the decoder reconnects.
 
 ```bash
 SERIAL_DEBUG_RAW=true cargo run
