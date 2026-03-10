@@ -8,13 +8,16 @@ use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::fs::OpenOptions;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{watch, Mutex};
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{debug, info, warn};
 
 pub const RAW_PREVIEW_MAX_BYTES: usize = 96;
 pub const SERIAL_DEBUG_BUFFER_CAPACITY: usize = 200;
+const SERIAL_DEBUG_LOG_FILE: &str = "serial-debug.log";
 
 pub type SharedSerialDebugBuffer = Arc<Mutex<VecDeque<SerialDebugSample>>>;
 
@@ -63,6 +66,21 @@ impl SportKind {
 
 pub(crate) fn rtd_profile_for_sport_name(name: &str) -> &'static str {
     SportKind::from_sport_name(name).rtd_profile_name()
+}
+
+fn build_serial_debug_log_line(
+    timestamp_rfc3339: &str,
+    sport: &str,
+    rtd_profile: &str,
+    device: &str,
+    bytes: &[u8],
+) -> String {
+    format!(
+        "{timestamp_rfc3339} sport={sport} rtd_profile={rtd_profile} device={device} byte_count={} hex=[{}] ascii=[{}]\\n",
+        bytes.len(),
+        format_hex_preview(bytes, RAW_PREVIEW_MAX_BYTES),
+        format_ascii_preview(bytes, RAW_PREVIEW_MAX_BYTES),
+    )
 }
 
 fn format_hex_preview(bytes: &[u8], max: usize) -> String {
@@ -122,6 +140,23 @@ pub async fn run_decoder(
 
                 let mut football_frame_index: u64 = 0;
                 let mut buffer = [0u8; 512];
+                let mut serial_debug_log_file = if cfg.serial_debug_raw {
+                    match OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(SERIAL_DEBUG_LOG_FILE)
+                        .await
+                    {
+                        Ok(file) => Some(file),
+                        Err(err) => {
+                            warn!(error = ?err, path = SERIAL_DEBUG_LOG_FILE, "failed to open serial debug log file");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 loop {
                     tokio::select! {
                         read_result = serial.read(&mut buffer) => {
@@ -129,6 +164,8 @@ pub async fn run_decoder(
                                 Ok(n) if n > 0 => {
                                     let read_bytes = &buffer[..n];
                                     if cfg.serial_debug_raw {
+                                        let timestamp_rfc3339 = Utc::now().to_rfc3339();
+
                                         debug!(
                                             byte_count = n,
                                             sport = ?selected_sport,
@@ -138,6 +175,21 @@ pub async fn run_decoder(
                                             ascii_preview = %format_ascii_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
                                             "raw serial frame"
                                         );
+
+                                        if let Some(file) = serial_debug_log_file.as_mut() {
+                                            let line = build_serial_debug_log_line(
+                                                &timestamp_rfc3339,
+                                                &cfg.sport_type,
+                                                selected_sport.rtd_profile_name(),
+                                                &cfg.serial_device,
+                                                read_bytes,
+                                            );
+
+                                            if let Err(err) = file.write_all(line.as_bytes()).await {
+                                                warn!(error = ?err, path = SERIAL_DEBUG_LOG_FILE, "failed to append raw serial frame to debug log file");
+                                                serial_debug_log_file = None;
+                                            }
+                                        }
                                     }
 
                                     let frame_index = match selected_sport {
@@ -236,8 +288,27 @@ pub(crate) fn synthesize_payload(cfg: &AppConfig, bytes: &[u8]) -> NormalizedSco
 
 #[cfg(test)]
 mod tests {
-    use super::synthesize_payload;
+    use super::{build_serial_debug_log_line, synthesize_payload};
     use crate::config::AppConfig;
+
+    #[test]
+    fn serial_debug_log_line_contains_expected_fields() {
+        let line = build_serial_debug_log_line(
+            "2025-01-01T00:00:00Z",
+            "basketball",
+            "rtd_basketball",
+            "/dev/ttyUSB0",
+            &[0x41, 0x00, 0x42],
+        );
+
+        assert!(line.contains("2025-01-01T00:00:00Z"));
+        assert!(line.contains("sport=basketball"));
+        assert!(line.contains("rtd_profile=rtd_basketball"));
+        assert!(line.contains("device=/dev/ttyUSB0"));
+        assert!(line.contains("byte_count=3"));
+        assert!(line.contains("hex=[41 00 42]"));
+        assert!(line.contains("ascii=[A.B]"));
+    }
 
     #[test]
     fn payload_uses_sport_specific_rtd_profile() {
