@@ -136,6 +136,23 @@ async fn get_index() -> Html<&'static str> {
           return toTitleCase(kind || number);
         };
 
+        const readLegacyField = (status, key) => {
+          if (!status || typeof status !== 'object') {
+            return null;
+          }
+
+          if (hasOwn(status, key)) {
+            return status[key];
+          }
+
+          const extras = status.extras;
+          if (extras && typeof extras === 'object' && hasOwn(extras, key)) {
+            return extras[key];
+          }
+
+          return null;
+        };
+
         const setText = (id, value) => {
           const node = byId(id);
           if (node) {
@@ -185,13 +202,18 @@ async fn get_index() -> Html<&'static str> {
 
         const updateFromStatus = (status) => {
           const infoChips = buildInfoChips(status);
+          const homeScore = status?.home_score ?? readLegacyField(status, 'home');
+          const awayScore = status?.away_score ?? readLegacyField(status, 'away');
+
+          const periodNumber = status?.segment_number ?? readLegacyField(status, 'period');
+          const periodKind = status?.segment_kind ?? (periodNumber !== null && periodNumber !== undefined ? 'period' : null);
 
           setText('home-team-name', textOrFallback(status?.extras?.sport_specific?.home_team_name, 'Home Team'));
           setText('away-team-name', textOrFallback(status?.extras?.sport_specific?.away_team_name, 'Away Team'));
-          setText('home-score', textOrFallback(status?.home_score));
-          setText('away-score', textOrFallback(status?.away_score));
+          setText('home-score', textOrFallback(homeScore));
+          setText('away-score', textOrFallback(awayScore));
           setText('clock-main', textOrFallback(status?.clock_main, '--:--'));
-          setText('segment-display', segmentLabel(status?.segment_kind, status?.segment_number));
+          setText('segment-display', segmentLabel(periodKind, periodNumber));
 
           for (let i = 0; i < 6; i += 1) {
             const chip = infoChips[i];
@@ -584,6 +606,9 @@ mod tests {
         assert!(page.contains("id=\"clock-main\""));
         assert!(page.contains("setInterval(pollStatus, POLL_MS)"));
         assert!(page.contains("fetch(DASHBOARD_STATUS_URL"));
+        assert!(page.contains("readLegacyField(status, 'home')"));
+        assert!(page.contains("readLegacyField(status, 'away')"));
+        assert!(page.contains("readLegacyField(status, 'period')"));
     }
 
     #[test]
