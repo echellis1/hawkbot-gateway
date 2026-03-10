@@ -1,6 +1,7 @@
 mod config;
 mod decoder;
 mod mqtt;
+mod rtd;
 mod schema;
 mod web;
 
@@ -36,7 +37,10 @@ async fn main() -> Result<()> {
 
     // 3. Initialize MQTT
     let (mqtt, event_loop, _mqtt_connected_rx) = MqttPublisher::new(&config)?;
-    info!("📡 MQTT Publisher initialized for {}:{}", config.mqtt_host, config.mqtt_port);
+    info!(
+        "📡 MQTT Publisher initialized for {}:{}",
+        config.mqtt_host, config.mqtt_port
+    );
 
     // 4. Start the MQTT Event Loop
     tokio::spawn(MqttPublisher::run_event_loop(
@@ -101,7 +105,7 @@ async fn publish_status_loop(
         let cfg = config_rx.borrow().clone();
         let interval_ms = cfg.publish_interval_ms.max(100);
         let payload = status_rx.borrow().clone();
-        
+
         // This is the ONLY data actively published by the gateway
         if let Err(err) = mqtt
             .publish_json(&cfg.mqtt_topic, &payload, cfg.mqtt_retain)
