@@ -264,6 +264,12 @@ pub struct AdminForm {
     mqtt_port: u16,
     mqtt_topic: String,
     publish_interval_ms: u64,
+    #[serde(default)]
+    serial_debug_raw: Option<String>,
+    #[serde(default)]
+    serial_debug_publish: Option<String>,
+    #[serde(default)]
+    serial_debug_topic: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,6 +294,13 @@ async fn post_admin(
     cfg.mqtt_port = form.mqtt_port;
     cfg.mqtt_topic = form.mqtt_topic;
     cfg.publish_interval_ms = form.publish_interval_ms;
+    cfg.serial_debug_raw = form.serial_debug_raw.is_some();
+    cfg.serial_debug_publish = form.serial_debug_publish.is_some();
+    cfg.serial_debug_topic = if form.serial_debug_topic.trim().is_empty() {
+        None
+    } else {
+        Some(form.serial_debug_topic)
+    };
 
     if let Err(err) = save_config(CONFIG_PATH, &cfg).await {
         return (
@@ -394,6 +407,48 @@ fn render_admin_page(cfg: &AppConfig) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
+    let debug_output_script = r#"<script>
+      (() => {
+        const output = document.getElementById('debug-output');
+        const POLL_MS = 1000;
+
+        const renderSample = (sample) => {
+          const ts = sample.timestamp_rfc3339 || '--';
+          const sport = sample.sport || '--';
+          const frame = sample.frame_index === undefined || sample.frame_index === null
+            ? '-'
+            : sample.frame_index;
+          const len = sample.byte_len || 0;
+          const hex = sample.hex_preview || '';
+          return `[${ts}] sport=${sport} frame=${frame} bytes=${len}\nhex: ${hex}`;
+        };
+
+        const pollDebug = async () => {
+          try {
+            const response = await fetch('/debug/serial.json', { cache: 'no-store' });
+            if (!response.ok) {
+              output.textContent = `Unable to load debug output (${response.status}).`;
+              return;
+            }
+
+            const samples = await response.json();
+            if (!Array.isArray(samples) || samples.length === 0) {
+              output.textContent = 'No debug samples yet. Enable "Publish debug samples" and wait for serial traffic.';
+              return;
+            }
+
+            const recent = samples.slice(-20).reverse().map(renderSample).join('\n\n');
+            output.textContent = recent;
+          } catch {
+            output.textContent = 'Unable to load debug output.';
+          }
+        };
+
+        pollDebug();
+        setInterval(pollDebug, POLL_MS);
+      })();
+    </script>"#;
+
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -467,6 +522,25 @@ fn render_admin_page(cfg: &AppConfig) -> String {
             </div>
           </section>
 
+          <section class="section-card" aria-label="Serial debug settings">
+            <h2 class="section-title">Serial debug settings</h2>
+            <p class="section-description">Enable short-term serial frame diagnostics and publish a live sample feed.</p>
+            <div class="form-grid">
+              <label class="checkbox-row" for="serial_debug_raw">
+                <input id="serial_debug_raw" name="serial_debug_raw" type="checkbox" {} />
+                Emit raw frame previews to gateway logs
+              </label>
+              <label class="checkbox-row" for="serial_debug_publish">
+                <input id="serial_debug_publish" name="serial_debug_publish" type="checkbox" {} />
+                Publish debug samples and expose them in the admin output panel
+              </label>
+              <div class="form-group">
+                <label for="serial_debug_topic">Serial Debug MQTT Topic (optional)</label>
+                <input id="serial_debug_topic" name="serial_debug_topic" value="{}" placeholder="Derived from MQTT topic when empty"/>
+              </div>
+            </div>
+          </section>
+
           <section class="section-card" aria-label="Save settings">
             <h2 class="section-title">Save configuration</h2>
             <p class="section-description">Apply changes to the active runtime config.</p>
@@ -485,12 +559,19 @@ fn render_admin_page(cfg: &AppConfig) -> String {
             </div>
           </form>
         </section>
+
+        <section class="section-card" aria-label="Serial debug output">
+          <h2 class="section-title">Serial debug output</h2>
+          <p class="section-description">Most recent debug samples from <code>/debug/serial.json</code> (requires debug publishing to be enabled).</p>
+          <pre class="debug-output" id="debug-output">Waiting for debug samples…</pre>
+        </section>
       </main>
 
       <footer class="app-footer">
         <p class="footer-note">Admin actions preserve existing backend routes and field names.</p>
       </footer>
     </div>
+    {}
   </body>
 </html>"#,
         cfg.serial_device,
@@ -500,7 +581,15 @@ fn render_admin_page(cfg: &AppConfig) -> String {
         sport_type_select,
         cfg.mqtt_topic,
         cfg.publish_interval_ms,
-        simulation_buttons
+        if cfg.serial_debug_raw { "checked" } else { "" },
+        if cfg.serial_debug_publish {
+            "checked"
+        } else {
+            ""
+        },
+        cfg.serial_debug_topic.clone().unwrap_or_default(),
+        simulation_buttons,
+        debug_output_script
     )
 }
 
