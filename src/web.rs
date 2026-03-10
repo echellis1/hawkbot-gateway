@@ -265,9 +265,9 @@ pub struct AdminForm {
     mqtt_topic: String,
     publish_interval_ms: u64,
     #[serde(default)]
-    serial_debug_raw: bool,
+    serial_debug_raw: Option<String>,
     #[serde(default)]
-    serial_debug_publish: bool,
+    serial_debug_publish: Option<String>,
     #[serde(default)]
     serial_debug_topic: String,
 }
@@ -294,8 +294,8 @@ async fn post_admin(
     cfg.mqtt_port = form.mqtt_port;
     cfg.mqtt_topic = form.mqtt_topic;
     cfg.publish_interval_ms = form.publish_interval_ms;
-    cfg.serial_debug_raw = form.serial_debug_raw;
-    cfg.serial_debug_publish = form.serial_debug_publish;
+    cfg.serial_debug_raw = form.serial_debug_raw.is_some();
+    cfg.serial_debug_publish = form.serial_debug_publish.is_some();
     cfg.serial_debug_topic = if form.serial_debug_topic.trim().is_empty() {
         None
     } else {
