@@ -8,6 +8,8 @@ use tokio::sync::watch;
 use tokio_serial::SerialPortBuilderExt;
 use tracing::{info, warn};
 
+const FOOTBALL_RTD_FRAME_LEN: usize = 240;
+
 #[derive(Clone, Copy)]
 enum FieldJustification {
     Left,
@@ -25,7 +27,7 @@ enum SportKind {
 
 impl SportKind {
     fn from_sport_name(name: &str) -> Self {
-        match name {
+        match name.trim().to_ascii_lowercase().as_str() {
             "volleyball" => Self::Volleyball,
             "football" => Self::Football,
             "soccer" => Self::Soccer,
@@ -71,13 +73,24 @@ pub async fn run_decoder(
                 );
 
                 let mut buffer = [0u8; 512];
+                let mut frame_buffer = Vec::<u8>::new();
                 loop {
                     tokio::select! {
                         read_result = serial.read(&mut buffer) => {
                             match read_result {
                                 Ok(n) if n > 0 => {
-                                    let payload = synthesize_payload(&cfg, &buffer[..n]);
-                                    let _ = status_tx.send(payload);
+                                    let read_bytes = &buffer[..n];
+                                    if matches!(selected_sport, SportKind::Football) {
+                                        frame_buffer.extend_from_slice(read_bytes);
+                                        let frames = drain_fixed_frames(&mut frame_buffer, FOOTBALL_RTD_FRAME_LEN);
+                                        for frame in frames {
+                                            let payload = synthesize_payload(&cfg, &frame);
+                                            let _ = status_tx.send(payload);
+                                        }
+                                    } else {
+                                        let payload = synthesize_payload(&cfg, read_bytes);
+                                        let _ = status_tx.send(payload);
+                                    }
                                 }
                                 Ok(_) => {}
                                 Err(err) => {
@@ -233,9 +246,23 @@ fn parse_possession(bytes: &[u8]) -> Option<String> {
     None
 }
 
+fn drain_fixed_frames(buffer: &mut Vec<u8>, frame_len: usize) -> Vec<Vec<u8>> {
+    if frame_len == 0 {
+        return Vec::new();
+    }
+
+    let frame_count = buffer.len() / frame_len;
+    let mut out = Vec::with_capacity(frame_count);
+    for _ in 0..frame_count {
+        let frame: Vec<u8> = buffer.drain(..frame_len).collect();
+        out.push(frame);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::synthesize_payload;
+    use super::{drain_fixed_frames, synthesize_payload};
     use crate::config::AppConfig;
 
     fn set_field(frame: &mut [u8], position_1_based: usize, value: &str) {
@@ -284,5 +311,27 @@ mod tests {
         assert_eq!(payload.extras["football_fields"]["down"], 3);
         assert_eq!(payload.extras["football_fields"]["to_go"], 10);
         assert_eq!(payload.extras["football_fields"]["ball_on"], 42);
+    }
+
+    #[test]
+    fn drain_fixed_frames_reassembles_partial_reads() {
+        let mut buffer = vec![1, 2, 3, 4, 5];
+        let frames = drain_fixed_frames(&mut buffer, 2);
+
+        assert_eq!(frames, vec![vec![1, 2], vec![3, 4]]);
+        assert_eq!(buffer, vec![5]);
+    }
+
+    #[test]
+    fn sport_kind_match_is_case_insensitive() {
+        let mut cfg = AppConfig::default();
+        cfg.sport_type = "Football".to_string();
+
+        let mut frame = vec![b' '; 240];
+        set_field(&mut frame, 1, "01");
+        set_field(&mut frame, 6, "05");
+
+        let payload = synthesize_payload(&cfg, &frame);
+        assert_eq!(payload.clock_main.as_deref(), Some("1:05"));
     }
 }
