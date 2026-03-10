@@ -118,8 +118,7 @@ body {
 .section-card {
   padding: var(--space-4);
   display: grid;
-  gap: var(--space-3);
-  align-content: start;
+  gap: var(--space-4);
 }
 
 .teams-grid {
@@ -207,27 +206,8 @@ body {
   gap: 0.75rem;
 }
 
-.admin-main {
-  gap: var(--space-4);
-  align-content: start;
-}
-.settings-grid {
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: var(--space-3);
-  align-items: stretch;
-}
-
-.settings-grid > .section-card {
-  height: 100%;
-}
-
-.section-card .form-grid {
-  align-content: start;
-}
-
-.section-card .button-row {
-  margin-top: var(--space-1);
-}
+.admin-main { gap: var(--space-4); }
+.settings-grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-4); }
 
 .section-title {
   margin: 0;
