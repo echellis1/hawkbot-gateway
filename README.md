@@ -87,6 +87,7 @@ Important fields:
 - `sport_type`
 - `serial_device`
 - `baud`
+- `serial_debug_raw` (default `false`; emits truncated raw serial byte previews at debug level)
 - `mqtt_host`
 - `mqtt_port`
 - `mqtt_topic`
@@ -94,6 +95,17 @@ Important fields:
 - `publish_interval_ms`
 - `admin_user`
 - `admin_pass`
+
+
+### Raw serial debug logging
+
+Enable structured raw frame logging (hex + ASCII preview) by setting `serial_debug_raw` in `config.json` or with an environment variable override:
+
+```bash
+SERIAL_DEBUG_RAW=true cargo run
+```
+
+Set to `false` to disable this mode (default).
 
 ## MQTT payloads
 

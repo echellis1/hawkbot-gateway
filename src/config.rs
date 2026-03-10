@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub sport_type: String,
     pub serial_device: String,
     pub baud: u32,
+    #[serde(default)]
+    pub serial_debug_raw: bool,
 
     pub mqtt_host: String,
     pub mqtt_port: u16,
@@ -37,6 +39,7 @@ impl Default for AppConfig {
             sport_type: "basketball".to_string(),
             serial_device: "/dev/ttyUSB0".to_string(),
             baud: 19200,
+            serial_debug_raw: false,
 
             mqtt_host: "127.0.0.1".to_string(),
             mqtt_port: 1883,
@@ -75,6 +78,9 @@ impl AppConfig {
             if let Ok(parsed) = v.parse::<u32>() {
                 self.baud = parsed;
             }
+        }
+        if let Ok(v) = env::var("SERIAL_DEBUG_RAW") {
+            self.serial_debug_raw = parse_bool(&v).unwrap_or(self.serial_debug_raw);
         }
 
         if let Ok(v) = env::var("MQTT_HOST") {
@@ -164,7 +170,8 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig> {
             .await
             .with_context(|| format!("reading config from {path}"))?;
 
-        serde_json::from_str::<AppConfig>(&text).with_context(|| format!("parsing config JSON from {path}"))?
+        serde_json::from_str::<AppConfig>(&text)
+            .with_context(|| format!("parsing config JSON from {path}"))?
     } else {
         let cfg = AppConfig::default();
         save_config(path, &cfg).await?;

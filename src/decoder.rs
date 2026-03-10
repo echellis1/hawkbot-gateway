@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
 use tokio_serial::SerialPortBuilderExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Copy)]
 enum SportKind {
@@ -43,6 +43,40 @@ pub(crate) fn rtd_profile_for_sport_name(name: &str) -> &'static str {
     SportKind::from_sport_name(name).rtd_profile_name()
 }
 
+const RAW_PREVIEW_MAX_BYTES: usize = 96;
+
+fn format_hex_preview(bytes: &[u8], max: usize) -> String {
+    let preview_len = bytes.len().min(max);
+    let mut out = String::with_capacity(preview_len.saturating_mul(3));
+    for (idx, b) in bytes.iter().take(preview_len).enumerate() {
+        if idx > 0 {
+            out.push(' ');
+        }
+        out.push_str(&format!("{b:02X}"));
+    }
+    if bytes.len() > max {
+        out.push_str(" …");
+    }
+    out
+}
+
+fn format_ascii_preview(bytes: &[u8], max: usize) -> String {
+    let preview_len = bytes.len().min(max);
+    let mut out = String::with_capacity(preview_len);
+    for &b in bytes.iter().take(preview_len) {
+        let ch = if (0x20..=0x7E).contains(&b) {
+            b as char
+        } else {
+            '.'
+        };
+        out.push(ch);
+    }
+    if bytes.len() > max {
+        out.push('…');
+    }
+    out
+}
+
 pub async fn run_decoder(
     config_rx: watch::Receiver<AppConfig>,
     status_tx: watch::Sender<NormalizedScoreboardStatus>,
@@ -70,7 +104,20 @@ pub async fn run_decoder(
                         read_result = serial.read(&mut buffer) => {
                             match read_result {
                                 Ok(n) if n > 0 => {
-                                    let payload = synthesize_payload(&cfg, &buffer[..n]);
+                                    let read_bytes = &buffer[..n];
+                                    if cfg.serial_debug_raw {
+                                        debug!(
+                                            byte_count = n,
+                                            sport = ?selected_sport,
+                                            rtd_profile = selected_sport.rtd_profile_name(),
+                                            serial_device = %cfg.serial_device,
+                                            hex_preview = %format_hex_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
+                                            ascii_preview = %format_ascii_preview(read_bytes, RAW_PREVIEW_MAX_BYTES),
+                                            "raw serial frame"
+                                        );
+                                    }
+
+                                    let payload = synthesize_payload(&cfg, read_bytes);
                                     let _ = status_tx.send(payload);
                                 }
                                 Ok(_) => {}
